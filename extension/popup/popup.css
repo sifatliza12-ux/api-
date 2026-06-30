@@ -11,6 +11,7 @@
     --accent-3: #fb923c;
     --line: rgba(255, 255, 255, 0.14);
     --shadow: 0 24px 50px rgba(6, 4, 14, 0.42);
+    --danger: #ff7a7a;
 }
 
 * {
@@ -21,7 +22,8 @@
 
 body {
     width: 390px;
-    min-height: 620px;
+    min-height: 580px;
+    margin: 0;
     font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: radial-gradient(circle at top left, rgba(236, 72, 153, 0.18), transparent 24%),
         linear-gradient(135deg, #12091f 0%, #1b1030 45%, #2b1238 100%);
@@ -31,8 +33,9 @@ body {
 .popup-shell {
     position: relative;
     overflow: hidden;
-    min-height: 620px;
-    padding: 20px;
+    width: 390px;
+    min-height: 580px;
+    padding: 18px 16px 16px;
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
@@ -71,18 +74,26 @@ body {
     z-index: 1;
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 14px;
+    transition: opacity 0.25s ease, transform 0.25s ease;
 }
 
 .view[hidden] {
-    display: none;
+    display: block;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    transform: translateY(6px);
 }
 
 .hero {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 14px;
+    gap: 12px;
+    padding-top: 8px;
 }
 
 .brand-mark {
@@ -178,7 +189,8 @@ h1 {
 
 .btn,
 .record-btn,
-.nav-item {
+.nav-item,
+.icon-btn {
     font-family: inherit;
     cursor: pointer;
     transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
@@ -187,13 +199,15 @@ h1 {
 .btn:hover,
 .record-btn:hover,
 .nav-item:hover,
-.feature-card:hover {
+.feature-card:hover,
+.icon-btn:hover {
     transform: translateY(-2px);
 }
 
 .btn:active,
 .record-btn:active,
-.nav-item:active {
+.nav-item:active,
+.icon-btn:active {
     transform: translateY(0);
 }
 
@@ -202,6 +216,13 @@ h1 {
     font-size: 14px;
     font-weight: 700;
     border-radius: 999px;
+}
+
+.btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+    transform: none;
+    box-shadow: none;
 }
 
 .btn-primary {
@@ -225,11 +246,17 @@ h1 {
     color: #8f81aa;
 }
 
-.dashboard-header {
+.dashboard-header,
+.screen-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+}
+
+.dashboard-header--compact {
+    padding-top: 6px;
+    align-items: flex-start;
 }
 
 .brand-group {
@@ -240,6 +267,7 @@ h1 {
 
 .brand-copy h2 {
     font-size: 20px;
+    line-height: 1.1;
 }
 
 .avatar-badge {
@@ -254,8 +282,27 @@ h1 {
     box-shadow: 0 10px 24px rgba(139, 92, 246, 0.22);
 }
 
+.icon-btn {
+    width: 36px;
+    height: 36px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+    font-size: 16px;
+}
+
+.header-spacer {
+    width: 36px;
+}
+
 .welcome-row {
     padding-top: 2px;
+}
+
+.welcome-row--compact {
+    padding-top: 4px;
+    margin-bottom: -2px;
 }
 
 .welcome-text {
@@ -267,12 +314,16 @@ h1 {
 .hero-card {
     display: flex;
     flex-direction: column;
-    gap: 14px;
-    padding: 18px;
-    border-radius: 24px;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 22px;
     background: linear-gradient(135deg, rgba(139, 92, 246, 0.22), rgba(236, 72, 153, 0.16));
     border: 1px solid rgba(255, 255, 255, 0.16);
     box-shadow: 0 16px 30px rgba(5, 4, 14, 0.24);
+}
+
+.hero-card--compact {
+    padding: 15px 16px;
 }
 
 .hero-card-copy h3 {
@@ -306,12 +357,16 @@ h1 {
 
 .stat-card,
 .feature-card,
-.activity-card {
+.activity-card,
+.recording-card,
+.controls-card,
+.metrics-card {
     background: var(--surface);
     backdrop-filter: blur(14px);
     border: 1px solid var(--line);
     border-radius: 18px;
     box-shadow: 0 10px 24px rgba(8, 6, 16, 0.18);
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
 }
 
 .stat-card {
@@ -340,12 +395,24 @@ h1 {
 }
 
 .feature-card {
-    padding: 14px 12px;
+    padding: 12px;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
+    justify-content: center;
     gap: 8px;
-    min-height: 90px;
+    min-height: 84px;
+}
+
+.feature-card:hover,
+.stat-card:hover,
+.activity-card:hover,
+.recording-card:hover,
+.controls-card:hover,
+.metrics-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 28px rgba(5, 4, 14, 0.24);
+    border-color: rgba(255, 255, 255, 0.2);
 }
 
 .feature-icon {
@@ -399,7 +466,7 @@ h1 {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
-    padding-top: 8px;
+    padding-top: 6px;
 }
 
 .nav-item {
@@ -416,5 +483,119 @@ h1 {
     color: var(--text);
     background: rgba(139, 92, 246, 0.24);
     border-color: rgba(255, 255, 255, 0.14);
+}
+
+.recording-card,
+.controls-card,
+.metrics-card {
+    padding: 14px;
+}
+
+.status-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.recording-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent-3), var(--accent-2));
+    box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.5);
+    animation: pulse 1.4s infinite;
+}
+
+.status-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 2px;
+}
+
+.status-value {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.instructions-card h3,
+.activity-log h3 {
+    font-size: 14px;
+    margin-bottom: 8px;
+}
+
+.instruction-list {
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.control-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.control-btn {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 12px;
+}
+
+.metric-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.metric-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.metric-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.metric-item strong {
+    font-size: 15px;
+}
+
+.activity-log p {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.footer-note {
+    font-size: 11px;
+    line-height: 1.5;
+    color: #9c92b3;
+    text-align: center;
+    margin-top: 4px;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.35);
+    }
+    70% {
+        box-shadow: 0 0 0 8px rgba(251, 146, 60, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(251, 146, 60, 0);
+    }
 }
 

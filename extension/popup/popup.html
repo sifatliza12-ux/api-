@@ -11,6 +11,7 @@
         <div class="ambient ambient-one"></div>
         <div class="ambient ambient-two"></div>
 
+        <!-- LOGIN SCREEN -->
         <section class="view login-view" id="login-view" aria-label="ForgeFlow login view">
             <section class="hero" aria-label="ForgeFlow intro">
                 <div class="brand-mark" aria-hidden="true">FF</div>
@@ -39,8 +40,9 @@
             <p class="footer">Version 1.0.0</p>
         </section>
 
+        <!-- DASHBOARD SCREEN -->
         <section class="view dashboard-view" id="dashboard-view" hidden aria-label="ForgeFlow dashboard view">
-            <header class="dashboard-header">
+            <header class="dashboard-header dashboard-header--compact">
                 <div class="brand-group">
                     <div class="brand-mark brand-mark-sm" aria-hidden="true">FF</div>
                     <div class="brand-copy">
@@ -51,16 +53,16 @@
                 <div class="avatar-badge" aria-label="User avatar">U</div>
             </header>
 
-            <div class="welcome-row">
+            <div class="welcome-row welcome-row--compact">
                 <p class="welcome-text">Welcome back!</p>
             </div>
 
-            <section class="hero-card" aria-label="Main action card">
+            <section class="hero-card hero-card--compact" aria-label="Main action card">
                 <div class="hero-card-copy">
                     <h3>Start Recording</h3>
                     <p>Record your workflow and let ForgeFlow generate a reusable API.</p>
                 </div>
-                <button type="button" id="start-recording-btn" class="record-btn">Start Recording</button>
+                <button type="button" id="start-recording-btn" class="record-btn" aria-label="Open workflow recording screen">Start Recording</button>
             </section>
 
             <section class="stats-grid" aria-label="Quick statistics">
@@ -106,11 +108,69 @@
             </section>
 
             <nav class="bottom-nav" aria-label="Bottom navigation">
-                <button type="button" class="nav-item active">Home</button>
-                <button type="button" class="nav-item">APIs</button>
-                <button type="button" class="nav-item">Marketplace</button>
-                <button type="button" class="nav-item">Profile</button>
+                <button type="button" class="nav-item active" aria-label="Open home view">Home</button>
+                <button type="button" class="nav-item" aria-label="View APIs">APIs</button>
+                <button type="button" class="nav-item" aria-label="View marketplace">Marketplace</button>
+                <button type="button" class="nav-item" aria-label="Open profile">Profile</button>
             </nav>
+        </section>
+
+        <!-- RECORDING SCREEN -->
+        <section class="view recording-view" id="recording-view" hidden aria-label="Workflow recording view">
+            <header class="screen-header">
+                <button type="button" id="back-to-dashboard-btn" class="icon-btn" aria-label="Return to dashboard">←</button>
+                <h2>Workflow Recorder</h2>
+                <div class="header-spacer" aria-hidden="true"></div>
+            </header>
+
+            <section class="recording-card" aria-label="Recording status">
+                <div class="status-row">
+                    <div class="recording-indicator" aria-hidden="true"></div>
+                    <div>
+                        <p class="status-label">Status</p>
+                        <p class="status-value">Ready to Record</p>
+                    </div>
+                </div>
+
+                <div class="instructions-card">
+                    <h3>How it works</h3>
+                    <ul class="instruction-list">
+                        <li>Open the website you want to automate.</li>
+                        <li>Perform your workflow naturally.</li>
+                        <li>ForgeFlow will analyze your actions.</li>
+                        <li>A reusable API will be generated afterwards.</li>
+                    </ul>
+                </div>
+            </section>
+
+            <section class="controls-card" aria-label="Recording controls">
+                <div class="control-row">
+                    <button type="button" id="record-start-btn" class="btn btn-primary control-btn" aria-label="Start workflow recording">Start Recording</button>
+                    <button type="button" id="record-pause-btn" class="btn btn-secondary control-btn" disabled aria-label="Pause workflow recording">Pause Recording</button>
+                    <button type="button" id="record-stop-btn" class="btn btn-secondary control-btn" disabled aria-label="Stop workflow recording">Stop Recording</button>
+                    <button type="button" id="record-cancel-btn" class="btn btn-secondary control-btn" aria-label="Cancel workflow recording">Cancel</button>
+                </div>
+            </section>
+
+            <section class="metrics-card" aria-label="Recording progress">
+                <div class="metric-grid">
+                    <article class="metric-item">
+                        <span class="metric-label">Steps Recorded</span>
+                        <strong>0</strong>
+                    </article>
+                    <article class="metric-item">
+                        <span class="metric-label">Duration</span>
+                        <strong>00:00</strong>
+                    </article>
+                </div>
+
+                <div class="activity-log">
+                    <h3>Activity Log</h3>
+                    <p>No activity yet.</p>
+                </div>
+            </section>
+
+            <p class="footer-note">Recording functionality will be added in a future milestone.</p>
         </section>
     </main>
 
