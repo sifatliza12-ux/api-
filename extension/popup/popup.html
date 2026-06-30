@@ -172,6 +172,61 @@
 
             <p class="footer-note">Recording functionality will be added in a future milestone.</p>
         </section>
+
+        <!-- GENERATING API SCREEN -->
+        <section class="view generation-view" id="generation-view" hidden aria-label="API generation view">
+            <div class="generation-content" aria-live="polite">
+                <div class="loading-ring" aria-hidden="true">
+                    <span class="loading-dot"></span>
+                </div>
+                <h2>Generating Your API...</h2>
+                <p>ForgeFlow is analyzing your recorded workflow.</p>
+            </div>
+        </section>
+
+        <!-- API GENERATED SCREEN -->
+        <section class="view generated-view" id="generated-view" hidden aria-label="Generated API view">
+            <div class="success-badge" aria-hidden="true">✓</div>
+            <h2>API Generated Successfully</h2>
+
+            <div class="meta-grid">
+                <article class="meta-card">
+                    <span class="meta-label">API Name</span>
+                    <strong>User Workflow API</strong>
+                </article>
+                <article class="meta-card">
+                    <span class="meta-label">Method</span>
+                    <strong>POST</strong>
+                </article>
+                <article class="meta-card">
+                    <span class="meta-label">Endpoint</span>
+                    <strong>/api/v1/workflow</strong>
+                </article>
+                <article class="meta-card">
+                    <span class="meta-label">Version</span>
+                    <strong>v1.0</strong>
+                </article>
+            </div>
+
+            <section class="code-card" aria-label="Generated API preview">
+                <div class="code-header">
+                    <span>Generated API</span>
+                    <span class="code-pill">Read-only</span>
+                </div>
+                <pre><code>POST /api/v1/workflow
+{
+  "success": true,
+  "message": "Workflow executed successfully."
+}</code></pre>
+            </section>
+
+            <div class="action-grid">
+                <button type="button" id="copy-endpoint-btn" class="btn btn-secondary action-btn" aria-label="Copy generated endpoint">Copy Endpoint</button>
+                <button type="button" id="download-api-btn" class="btn btn-secondary action-btn" aria-label="Download generated API">Download API</button>
+                <button type="button" id="publish-marketplace-btn" class="btn btn-secondary action-btn" aria-label="Publish API to marketplace">Publish to Marketplace</button>
+                <button type="button" id="back-to-dashboard-generated-btn" class="btn btn-primary action-btn" aria-label="Return to dashboard">Back to Dashboard</button>
+            </div>
+        </section>
     </main>
 
     <script src="popup.js"></script>
