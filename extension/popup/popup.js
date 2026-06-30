@@ -1,26 +1,45 @@
 /**
  * popup.js
- * Handles the premium popup interactions for Craft Api.
+ * Handles the premium popup interactions for ForgeFlow.
  */
 
-function initPopup() {
-    const loginButton = document.getElementById('login-btn');
-    const trialButton = document.getElementById('trial-btn');
+const popupApp = {
+    init() {
+        const loginView = document.getElementById('login-view');
+        const dashboardView = document.getElementById('dashboard-view');
+        const loginButton = document.getElementById('login-btn');
+        const trialButton = document.getElementById('trial-btn');
+        const startRecordingButton = document.getElementById('start-recording-btn');
 
-    if (loginButton) {
-        loginButton.addEventListener('click', () => {
-            // TODO: Implement login flow here.
-        });
+        if (!loginView || !dashboardView) {
+            return;
+        }
+
+        const showDashboard = () => {
+            loginView.hidden = true;
+            dashboardView.hidden = false;
+            // TODO: Add analytics or state tracking for dashboard entry.
+        };
+
+        const handleStartRecording = () => {
+            // TODO: Implement recording flow and API generation later.
+            console.info('Start Recording clicked');
+        };
+
+        if (loginButton) {
+            loginButton.addEventListener('click', showDashboard);
+        }
+
+        if (trialButton) {
+            trialButton.addEventListener('click', showDashboard);
+        }
+
+        if (startRecordingButton) {
+            startRecordingButton.addEventListener('click', handleStartRecording);
+        }
+
+        // TODO: Add future popup initialization logic here.
     }
+};
 
-    if (trialButton) {
-        trialButton.addEventListener('click', () => {
-            // TODO: Implement free trial flow here.
-        });
-    }
-
-    // TODO: Add future popup initialization logic here.
-}
-
-// Initialize on popup load.
-document.addEventListener('DOMContentLoaded', initPopup);
+document.addEventListener('DOMContentLoaded', () => popupApp.init());

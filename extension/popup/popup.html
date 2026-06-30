@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Craft Api</title>
+    <title>ForgeFlow</title>
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -11,31 +11,107 @@
         <div class="ambient ambient-one"></div>
         <div class="ambient ambient-two"></div>
 
-        <section class="hero" aria-label="Craft Api intro">
-            <div class="brand-mark" aria-hidden="true">CF</div>
-            <div class="hero-copy">
-                <p class="eyebrow">AI-powered workflow platform</p>
-                <h1>ForgeFlow</h1>
-                <p class="subtitle">Turn Workflows into APIs.</p>
-            </div>
+        <section class="view login-view" id="login-view" aria-label="ForgeFlow login view">
+            <section class="hero" aria-label="ForgeFlow intro">
+                <div class="brand-mark" aria-hidden="true">FF</div>
+                <div class="hero-copy">
+                    <p class="eyebrow">AI-powered workflow platform</p>
+                    <h1>ForgeFlow</h1>
+                    <p class="subtitle">Turn workflows into reusable APIs.</p>
+                </div>
+            </section>
+
+            <form class="login-form" novalidate>
+                <label class="field">
+                    <span>Email</span>
+                    <input type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email">
+                </label>
+
+                <label class="field">
+                    <span>Password</span>
+                    <input type="password" id="password" name="password" placeholder="Enter your password" autocomplete="current-password">
+                </label>
+
+                <button type="button" id="login-btn" class="btn btn-primary">Login</button>
+                <button type="button" id="trial-btn" class="btn btn-secondary">Continue with Free Trial</button>
+            </form>
+
+            <p class="footer">Version 1.0.0</p>
         </section>
 
-        <form class="login-form" novalidate>
-            <label class="field">
-                <span>Email</span>
-                <input type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email">
-            </label>
+        <section class="view dashboard-view" id="dashboard-view" hidden aria-label="ForgeFlow dashboard view">
+            <header class="dashboard-header">
+                <div class="brand-group">
+                    <div class="brand-mark brand-mark-sm" aria-hidden="true">FF</div>
+                    <div class="brand-copy">
+                        <p class="eyebrow eyebrow-small">Workflow intelligence</p>
+                        <h2>ForgeFlow</h2>
+                    </div>
+                </div>
+                <div class="avatar-badge" aria-label="User avatar">U</div>
+            </header>
 
-            <label class="field">
-                <span>Password</span>
-                <input type="password" id="password" name="password" placeholder="Enter your password" autocomplete="current-password">
-            </label>
+            <div class="welcome-row">
+                <p class="welcome-text">Welcome back!</p>
+            </div>
 
-            <button type="button" id="login-btn" class="btn btn-primary">Login</button>
-            <button type="button" id="trial-btn" class="btn btn-secondary">Continue with Free Trial</button>
-        </form>
+            <section class="hero-card" aria-label="Main action card">
+                <div class="hero-card-copy">
+                    <h3>Start Recording</h3>
+                    <p>Record your workflow and let ForgeFlow generate a reusable API.</p>
+                </div>
+                <button type="button" id="start-recording-btn" class="record-btn">Start Recording</button>
+            </section>
 
-        <p class="footer">Version 1.0.0</p>
+            <section class="stats-grid" aria-label="Quick statistics">
+                <article class="stat-card">
+                    <span class="stat-label">APIs Created</span>
+                    <strong>0</strong>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">Free Trial Remaining</span>
+                    <strong>5</strong>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">Subscription</span>
+                    <strong>Free</strong>
+                </article>
+            </section>
+
+            <section class="feature-grid" aria-label="Dashboard features">
+                <article class="feature-card">
+                    <span class="feature-icon">✦</span>
+                    <h4>My APIs</h4>
+                </article>
+                <article class="feature-card">
+                    <span class="feature-icon">◫</span>
+                    <h4>Marketplace</h4>
+                </article>
+                <article class="feature-card">
+                    <span class="feature-icon">◎</span>
+                    <h4>Subscription</h4>
+                </article>
+                <article class="feature-card">
+                    <span class="feature-icon">⚙</span>
+                    <h4>Settings</h4>
+                </article>
+            </section>
+
+            <section class="activity-card" aria-label="Recent activity">
+                <div class="activity-title-row">
+                    <h3>Recent Activity</h3>
+                    <span class="activity-pill">Live</span>
+                </div>
+                <div class="empty-state">No APIs generated yet.</div>
+            </section>
+
+            <nav class="bottom-nav" aria-label="Bottom navigation">
+                <button type="button" class="nav-item active">Home</button>
+                <button type="button" class="nav-item">APIs</button>
+                <button type="button" class="nav-item">Marketplace</button>
+                <button type="button" class="nav-item">Profile</button>
+            </nav>
+        </section>
     </main>
 
     <script src="popup.js"></script>
