@@ -7,11 +7,32 @@
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-    <div class="container">
-        <h1>API Builder</h1>
-        <p class="welcome-message">Welcome to API Builder. Get started by logging in.</p>
-        <button id="login-btn" class="btn">Login</button>
+    <div class="popup-shell">
+        <div class="brand-mark">API</div>
+
+        <div class="header">
+            <h1>API Builder</h1>
+            <p class="subtitle">Build, Manage & Sell APIs</p>
+        </div>
+
+        <form class="login-form" novalidate>
+            <label class="field">
+                <span>Email</span>
+                <input type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email">
+            </label>
+
+            <label class="field">
+                <span>Password</span>
+                <input type="password" id="password" name="password" placeholder="Enter your password" autocomplete="current-password">
+            </label>
+
+            <button type="button" id="login-btn" class="btn btn-primary">Login</button>
+            <button type="button" id="trial-btn" class="btn btn-secondary">Continue with Free Trial</button>
+        </form>
+
+        <p class="footer">Version 1.0.0</p>
     </div>
+
     <script src="popup.js"></script>
 </body>
 </html>
