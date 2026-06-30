@@ -11,6 +11,8 @@ const popupApp = {
         const generationView = document.getElementById('generation-view');
         const generatedView = document.getElementById('generated-view');
 
+        const marketplaceView = document.getElementById('marketplace-view');
+
         const loginButton = document.getElementById('login-btn');
         const trialButton = document.getElementById('trial-btn');
         const startRecordingButton = document.getElementById('start-recording-btn');
@@ -21,8 +23,10 @@ const popupApp = {
         const downloadApiButton = document.getElementById('download-api-btn');
         const publishMarketplaceButton = document.getElementById('publish-marketplace-btn');
         const backToDashboardGeneratedButton = document.getElementById('back-to-dashboard-generated-btn');
+        const marketplaceCard = document.getElementById('marketplace-card');
+        const backToDashboardFromMarketplaceButton = document.getElementById('back-to-dashboard-from-marketplace-btn');
 
-        if (!loginView || !dashboardView || !recordingView || !generationView || !generatedView) {
+        if (!loginView || !dashboardView || !recordingView || !generationView || !generatedView || !marketplaceView) {
             return;
         }
 
@@ -41,7 +45,8 @@ const popupApp = {
                 dashboard: dashboardView,
                 recording: recordingView,
                 generation: generationView,
-                generated: generatedView
+                generated: generatedView,
+                marketplace: marketplaceView
             };
 
             clearGenerationTimeout();
@@ -69,6 +74,11 @@ const popupApp = {
         const showGenerated = () => {
             showView('generated');
             // TODO: Persist the generated API metadata when the backend is available.
+        };
+
+        const showMarketplace = () => {
+            showView('marketplace');
+            // TODO: Connect the marketplace screen to backend marketplace data later.
         };
 
         const handleStartRecording = () => {
@@ -141,7 +151,21 @@ const popupApp = {
             backToDashboardGeneratedButton.addEventListener('click', showDashboard);
         }
 
-        // TODO: Add future popup initialization logic here.
+        if (marketplaceCard) {
+            marketplaceCard.addEventListener('click', showMarketplace);
+            marketplaceCard.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    showMarketplace();
+                }
+            });
+        }
+
+        if (backToDashboardFromMarketplaceButton) {
+            backToDashboardFromMarketplaceButton.addEventListener('click', showDashboard);
+        }
+
+        // TODO: Add future marketplace backend integration, ownership verification, publishing, resale, and payment gateway hooks here.
     }
 };
 

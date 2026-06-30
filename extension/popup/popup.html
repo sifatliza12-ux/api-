@@ -85,7 +85,7 @@
                     <span class="feature-icon">✦</span>
                     <h4>My APIs</h4>
                 </article>
-                <article class="feature-card">
+                <article class="feature-card feature-card--marketplace" id="marketplace-card" tabindex="0" role="button" aria-label="Open marketplace">
                     <span class="feature-icon">◫</span>
                     <h4>Marketplace</h4>
                 </article>
@@ -226,6 +226,102 @@
                 <button type="button" id="publish-marketplace-btn" class="btn btn-secondary action-btn" aria-label="Publish API to marketplace">Publish to Marketplace</button>
                 <button type="button" id="back-to-dashboard-generated-btn" class="btn btn-primary action-btn" aria-label="Return to dashboard">Back to Dashboard</button>
             </div>
+        </section>
+
+        <!-- MARKETPLACE SCREEN -->
+        <section class="view marketplace-view" id="marketplace-view" hidden aria-label="Marketplace view">
+            <header class="screen-header marketplace-header">
+                <button type="button" id="back-to-dashboard-from-marketplace-btn" class="icon-btn" aria-label="Return to dashboard">←</button>
+                <div class="marketplace-title-group">
+                    <h2>Marketplace</h2>
+                    <p>Discover reusable APIs built by the ForgeFlow community.</p>
+                </div>
+                <div class="header-spacer" aria-hidden="true"></div>
+            </header>
+
+            <label class="search-field" for="marketplace-search">
+                <span class="search-icon" aria-hidden="true">⌕</span>
+                <input type="text" id="marketplace-search" placeholder="Search APIs..." aria-label="Search marketplace APIs">
+            </label>
+
+            <div class="chip-row" aria-label="Marketplace categories">
+                <button type="button" class="chip active">Productivity</button>
+                <button type="button" class="chip">Automation</button>
+                <button type="button" class="chip">E-commerce</button>
+                <button type="button" class="chip">Social Media</button>
+            </div>
+
+            <section class="marketplace-section" aria-label="Featured APIs">
+                <h3>Featured APIs</h3>
+                <article class="market-card">
+                    <div class="market-card-top">
+                        <div>
+                            <h4>Invoice Automation API</h4>
+                            <p>Automatically generate invoices from completed workflows.</p>
+                        </div>
+                        <span class="market-price">$5</span>
+                    </div>
+                    <div class="market-meta">
+                        <span>★★★★★</span>
+                        <span>Forge Studio</span>
+                    </div>
+                    <button type="button" class="btn btn-primary market-action-btn" aria-label="Buy Invoice Automation API">Buy</button>
+                </article>
+
+                <article class="market-card">
+                    <div class="market-card-top">
+                        <div>
+                            <h4>Order Processing API</h4>
+                            <p>Automate order fulfillment across multiple platforms.</p>
+                        </div>
+                        <span class="market-price">$12</span>
+                    </div>
+                    <div class="market-meta">
+                        <span>★★★★★</span>
+                        <span>Automation Labs</span>
+                    </div>
+                    <button type="button" class="btn btn-secondary market-action-btn" aria-label="Buy Order Processing API">Buy</button>
+                </article>
+
+                <article class="market-card">
+                    <div class="market-card-top">
+                        <div>
+                            <h4>Social Posting API</h4>
+                            <p>Publish content across multiple social platforms.</p>
+                        </div>
+                        <span class="market-price">$20</span>
+                    </div>
+                    <div class="market-meta">
+                        <span>★★★★★</span>
+                        <span>FlowTech</span>
+                    </div>
+                    <button type="button" class="btn btn-secondary market-action-btn" aria-label="Buy Social Posting API">Buy</button>
+                </article>
+            </section>
+
+            <section class="marketplace-section" aria-label="Your published APIs">
+                <h3>My Published APIs</h3>
+                <article class="market-card market-card--listing">
+                    <div class="market-card-top">
+                        <div>
+                            <h4>Student Record API</h4>
+                            <p>Original purchase price: $10 • Selling price: $15</p>
+                        </div>
+                        <span class="listing-badge">Listed for Sale</span>
+                    </div>
+                    <div class="market-meta">
+                        <span>Status: Listed</span>
+                        <span>Owner: You</span>
+                    </div>
+                    <div class="listing-actions">
+                        <button type="button" class="btn btn-secondary action-btn" aria-label="Edit listing price">Edit Price</button>
+                        <button type="button" class="btn btn-secondary action-btn" aria-label="Remove listing">Remove Listing</button>
+                    </div>
+                    <p class="listing-note">Users can list their generated APIs for sale or adjust their selling price.</p>
+                </article>
+            </section>
+
+            <p class="footer-note">Marketplace purchases and publishing will be available in a future milestone.</p>
         </section>
     </main>
 
