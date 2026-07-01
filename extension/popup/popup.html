@@ -81,7 +81,7 @@
             </section>
 
             <section class="feature-grid" aria-label="Dashboard features">
-                <article class="feature-card">
+                <article class="feature-card feature-card--my-apis" id="my-apis-card" tabindex="0" role="button" aria-label="Open My APIs screen">
                     <span class="feature-icon">✦</span>
                     <h4>My APIs</h4>
                 </article>
@@ -226,6 +226,106 @@
                 <button type="button" id="publish-marketplace-btn" class="btn btn-secondary action-btn" aria-label="Publish API to marketplace">Publish to Marketplace</button>
                 <button type="button" id="back-to-dashboard-generated-btn" class="btn btn-primary action-btn" aria-label="Return to dashboard">Back to Dashboard</button>
             </div>
+        </section>
+
+        <!-- MY APIs SCREEN -->
+        <section class="view my-apis-view" id="my-apis-view" hidden aria-label="My APIs view">
+            <header class="screen-header my-apis-header">
+                <button type="button" id="back-to-dashboard-from-my-apis-btn" class="icon-btn" aria-label="Return to dashboard">←</button>
+                <div class="my-apis-title-group">
+                    <h2>My APIs</h2>
+                    <p>Manage your generated APIs.</p>
+                </div>
+                <div class="header-spacer" aria-hidden="true"></div>
+            </header>
+
+            <label class="search-field" for="my-apis-search">
+                <span class="search-icon" aria-hidden="true">⌕</span>
+                <input type="text" id="my-apis-search" placeholder="Search your APIs..." aria-label="Search your APIs">
+            </label>
+
+            <section class="stats-grid stats-grid--compact" aria-label="API statistics">
+                <article class="stat-card stat-card--compact">
+                    <span class="stat-label">Total APIs</span>
+                    <strong>3</strong>
+                </article>
+                <article class="stat-card stat-card--compact">
+                    <span class="stat-label">Published</span>
+                    <strong>1</strong>
+                </article>
+                <article class="stat-card stat-card--compact">
+                    <span class="stat-label">Drafts</span>
+                    <strong>1</strong>
+                </article>
+            </section>
+
+            <section class="my-apis-section" aria-label="Your API collection">
+                <!-- TODO: Load generated APIs from backend here. -->
+                <article class="api-card">
+                    <div class="api-card-top">
+                        <div>
+                            <h3>User Workflow API</h3>
+                            <p class="api-meta-line">POST • v1.0 • Created Today</p>
+                        </div>
+                        <span class="status-badge status-badge--active">Active</span>
+                    </div>
+                    <div class="api-details">
+                        <span>Endpoint: /api/v1/workflow</span>
+                        <span>Last Updated: 2h ago</span>
+                    </div>
+                    <div class="api-actions">
+                        <button type="button" class="btn btn-secondary api-action-btn" aria-label="View API details">View API</button>
+                        <button type="button" class="btn btn-secondary api-action-btn copy-endpoint-btn" data-original-text="Copy Endpoint" aria-label="Copy endpoint">Copy Endpoint</button>
+                        <button type="button" class="btn btn-secondary api-action-btn" aria-label="Publish API to marketplace">Publish to Marketplace</button>
+                        <button type="button" class="btn btn-danger api-action-btn" aria-label="Delete API">Delete</button>
+                    </div>
+                    <!-- TODO: Add API editing and version management workflows here. -->
+                </article>
+
+                <article class="api-card">
+                    <div class="api-card-top">
+                        <div>
+                            <h3>Invoice Generator API</h3>
+                            <p class="api-meta-line">GET • v1.2 • Created Yesterday</p>
+                        </div>
+                        <span class="status-badge status-badge--draft">Draft</span>
+                    </div>
+                    <div class="api-details">
+                        <span>Endpoint: /api/v1/invoices</span>
+                        <span>Last Updated: 1d ago</span>
+                    </div>
+                    <div class="api-actions">
+                        <button type="button" class="btn btn-secondary api-action-btn" aria-label="View API details">View API</button>
+                        <button type="button" class="btn btn-secondary api-action-btn copy-endpoint-btn" data-original-text="Copy Endpoint" aria-label="Copy endpoint">Copy Endpoint</button>
+                        <button type="button" class="btn btn-secondary api-action-btn" aria-label="Publish API to marketplace">Publish to Marketplace</button>
+                        <button type="button" class="btn btn-danger api-action-btn" aria-label="Delete API">Delete</button>
+                    </div>
+                    <!-- TODO: Add publishing workflow and endpoint generation here. -->
+                </article>
+
+                <article class="api-card">
+                    <div class="api-card-top">
+                        <div>
+                            <h3>Student Records API</h3>
+                            <p class="api-meta-line">POST • v2.0 • Created 3 days ago</p>
+                        </div>
+                        <span class="status-badge status-badge--published">Published</span>
+                    </div>
+                    <div class="api-details">
+                        <span>Endpoint: /api/v1/students</span>
+                        <span>Last Updated: 3d ago</span>
+                    </div>
+                    <div class="api-actions">
+                        <button type="button" class="btn btn-secondary api-action-btn" aria-label="View API details">View API</button>
+                        <button type="button" class="btn btn-secondary api-action-btn copy-endpoint-btn" data-original-text="Copy Endpoint" aria-label="Copy endpoint">Copy Endpoint</button>
+                        <button type="button" class="btn btn-secondary api-action-btn" aria-label="Publish API to marketplace">Publish to Marketplace</button>
+                        <button type="button" class="btn btn-danger api-action-btn" aria-label="Delete API">Delete</button>
+                    </div>
+                    <!-- TODO: Connect API version management to backend later. -->
+                </article>
+            </section>
+
+            <p class="footer-note">My APIs will support real CRUD actions and endpoint generation in a future milestone.</p>
         </section>
 
         <!-- MARKETPLACE SCREEN -->

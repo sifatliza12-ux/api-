@@ -10,7 +10,7 @@ const popupApp = {
         const recordingView = document.getElementById('recording-view');
         const generationView = document.getElementById('generation-view');
         const generatedView = document.getElementById('generated-view');
-
+        const myApisView = document.getElementById('my-apis-view');
         const marketplaceView = document.getElementById('marketplace-view');
 
         const loginButton = document.getElementById('login-btn');
@@ -23,10 +23,12 @@ const popupApp = {
         const downloadApiButton = document.getElementById('download-api-btn');
         const publishMarketplaceButton = document.getElementById('publish-marketplace-btn');
         const backToDashboardGeneratedButton = document.getElementById('back-to-dashboard-generated-btn');
+        const myApisCard = document.getElementById('my-apis-card');
+        const backToDashboardFromMyApisButton = document.getElementById('back-to-dashboard-from-my-apis-btn');
         const marketplaceCard = document.getElementById('marketplace-card');
         const backToDashboardFromMarketplaceButton = document.getElementById('back-to-dashboard-from-marketplace-btn');
 
-        if (!loginView || !dashboardView || !recordingView || !generationView || !generatedView || !marketplaceView) {
+        if (!loginView || !dashboardView || !recordingView || !generationView || !generatedView || !myApisView || !marketplaceView) {
             return;
         }
 
@@ -46,6 +48,7 @@ const popupApp = {
                 recording: recordingView,
                 generation: generationView,
                 generated: generatedView,
+                myApis: myApisView,
                 marketplace: marketplaceView
             };
 
@@ -76,6 +79,11 @@ const popupApp = {
             // TODO: Persist the generated API metadata when the backend is available.
         };
 
+        const showMyApis = () => {
+            showView('myApis');
+            // TODO: Load generated APIs from backend when the API service is available.
+        };
+
         const showMarketplace = () => {
             showView('marketplace');
             // TODO: Connect the marketplace screen to backend marketplace data later.
@@ -94,16 +102,25 @@ const popupApp = {
             // TODO: Reset recording state when the real workflow is implemented.
         };
 
-        const handleCopyEndpoint = () => {
-            if (copyEndpointButton) {
-                copyEndpointButton.textContent = 'Copied!';
-                copyEndpointButton.classList.add('is-copied');
-                window.setTimeout(() => {
-                    copyEndpointButton.textContent = 'Copy Endpoint';
-                    copyEndpointButton.classList.remove('is-copied');
-                }, 1200);
+        const handleCopyEndpoint = (eventOrButton = copyEndpointButton) => {
+            const targetButton = eventOrButton && typeof eventOrButton === 'object' && 'currentTarget' in eventOrButton
+                ? eventOrButton.currentTarget
+                : eventOrButton || copyEndpointButton;
+
+            if (!targetButton || !(targetButton instanceof HTMLElement)) {
+                return;
             }
-            // TODO: Replace this UI-only feedback with actual clipboard integration.
+
+            const originalText = targetButton.dataset ? (targetButton.dataset.originalText || 'Copy Endpoint') : 'Copy Endpoint';
+            targetButton.textContent = 'Copied!';
+            targetButton.classList.add('is-copied');
+
+            window.setTimeout(() => {
+                targetButton.textContent = originalText;
+                targetButton.classList.remove('is-copied');
+            }, 1200);
+
+            // TODO: Replace this visual-only feedback with actual clipboard integration.
         };
 
         const handlePlaceholderAction = (label) => {
@@ -150,6 +167,24 @@ const popupApp = {
         if (backToDashboardGeneratedButton) {
             backToDashboardGeneratedButton.addEventListener('click', showDashboard);
         }
+
+        if (myApisCard) {
+            myApisCard.addEventListener('click', showMyApis);
+            myApisCard.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    showMyApis();
+                }
+            });
+        }
+
+        if (backToDashboardFromMyApisButton) {
+            backToDashboardFromMyApisButton.addEventListener('click', showDashboard);
+        }
+
+        document.querySelectorAll('.copy-endpoint-btn').forEach((button) => {
+            button.addEventListener('click', () => handleCopyEndpoint(button));
+        });
 
         if (marketplaceCard) {
             marketplaceCard.addEventListener('click', showMarketplace);

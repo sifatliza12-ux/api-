@@ -723,8 +723,138 @@ pre {
     color: #fff;
 }
 
+.feature-card--my-apis,
 .feature-card--marketplace {
     cursor: pointer;
+}
+
+.my-apis-view {
+    gap: 10px;
+    padding-top: 2px;
+}
+
+.my-apis-header {
+    align-items: flex-start;
+}
+
+.my-apis-title-group h2 {
+    font-size: 18px;
+    margin-bottom: 2px;
+}
+
+.my-apis-title-group p {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.4;
+}
+
+.stats-grid--compact {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.stat-card--compact {
+    padding: 10px 10px 11px;
+}
+
+.stat-card--compact strong {
+    font-size: 16px;
+}
+
+.my-apis-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.api-card {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 12px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 10px 24px rgba(8, 6, 16, 0.16);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.api-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 28px rgba(5, 4, 14, 0.24);
+}
+
+.api-card-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.api-card-top h3 {
+    font-size: 13px;
+    margin-bottom: 3px;
+}
+
+.api-meta-line {
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.status-badge--active {
+    color: #dcfce7;
+    background: rgba(34, 197, 94, 0.18);
+}
+
+.status-badge--draft {
+    color: #fde68a;
+    background: rgba(234, 179, 8, 0.16);
+}
+
+.status-badge--published {
+    color: #dbeafe;
+    background: rgba(59, 130, 246, 0.18);
+}
+
+.api-details {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.api-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.api-action-btn {
+    padding: 8px 10px;
+    font-size: 11px;
+}
+
+.btn-danger {
+    color: #ffd8d8;
+    border: 1px solid rgba(255, 122, 122, 0.26);
+    background: rgba(255, 122, 122, 0.12);
+}
+
+.copy-endpoint-btn.is-copied {
+    color: #fff;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.24), rgba(236, 72, 153, 0.24));
 }
 
 .marketplace-view {
