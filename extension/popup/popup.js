@@ -151,6 +151,47 @@ const popupApp = {
             // TODO: Replace this visual-only feedback with actual clipboard integration.
         };
 
+        const handleDownloadApi = async () => {
+            // Generates a sample API JSON file and triggers a download.
+            // TODO: Support downloading real generated APIs from the backend (fetch and auth).
+            try {
+                const payload = {
+                    name: 'User Workflow API',
+                    version: '1.0.0',
+                    method: 'POST',
+                    endpoint: '/api/v1/workflow',
+                    generatedBy: 'ForgeFlow',
+                    createdAt: new Date().toISOString()
+                };
+
+                const json = JSON.stringify(payload, null, 2);
+                const blob = new Blob([json], { type: 'application/json' });
+                const objectUrl = URL.createObjectURL(blob);
+
+                try {
+                    const anchor = document.createElement('a');
+                    anchor.href = objectUrl;
+                    anchor.download = 'workflow-api.json';
+                    // Append to DOM to make the click work in all browsers
+                    document.body.appendChild(anchor);
+                    anchor.click();
+                    anchor.remove();
+                } finally {
+                    // Revoke the object URL shortly after the download starts
+                    setTimeout(() => URL.revokeObjectURL(objectUrl), 100);
+                }
+            } catch (err) {
+                console.error('[ForgeFlow] download API failed', err);
+                // Friendly user-facing error only on failure
+                try {
+                    alert('Unable to download the API file. Please try again.');
+                } catch (e) {
+                    // If alert is not available, silently fail (UI shouldn't break)
+                    console.error('[ForgeFlow] alert failed', e);
+                }
+            }
+        };
+
         const updateLoginError = (message) => {
             if (!loginErrorMessage) {
                 loginErrorMessage = document.createElement('p');
@@ -262,7 +303,7 @@ const popupApp = {
         }
 
         if (downloadApiButton) {
-            downloadApiButton.addEventListener('click', () => handlePlaceholderAction('Download API'));
+            downloadApiButton.addEventListener('click', handleDownloadApi);
         }
 
         if (publishMarketplaceButton) {
