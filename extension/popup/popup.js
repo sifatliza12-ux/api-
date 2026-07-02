@@ -141,11 +141,27 @@ const popupApp = {
 
                     if (resp.ok) {
                         lastGeneratedApi = await resp.json().catch(() => null);
+                        // Also persist locally for offline support
+                        try {
+                            if (lastGeneratedApi) addLocalApi(lastGeneratedApi);
+                        } catch (e) { /* ignore */ }
                     } else {
                         console.warn('[ForgeFlow] failed to save generated API', resp.status);
+                        // Fallback: save locally so it appears in My APIs
+                        try {
+                            const localApi = Object.assign({}, payload, { id: Date.now(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+                            addLocalApi(localApi);
+                            lastGeneratedApi = localApi;
+                        } catch (e) { /* ignore */ }
                     }
                 } catch (err) {
                     console.error('[ForgeFlow] error saving generated API', err);
+                    // Fallback: save locally so it appears in My APIs
+                    try {
+                        const localApi = Object.assign({}, payload, { id: Date.now(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+                        addLocalApi(localApi);
+                        lastGeneratedApi = localApi;
+                    } catch (e) { /* ignore */ }
                 }
             })();
         };
@@ -160,6 +176,41 @@ const popupApp = {
             const response = await fetch(url, opts);
             const data = await response.json().catch(() => ({}));
             return { ok: response.ok, status: response.status, data };
+        };
+
+        const LOCAL_KEY = 'forgeflow_my_apis';
+
+        const getLocalApis = () => {
+            try {
+                const raw = localStorage.getItem(LOCAL_KEY);
+                return raw ? JSON.parse(raw) : [];
+            } catch (e) {
+                return [];
+            }
+        };
+
+        const saveLocalApis = (arr) => {
+            try {
+                localStorage.setItem(LOCAL_KEY, JSON.stringify(arr || []));
+            } catch (e) {
+                console.warn('[ForgeFlow] unable to save local apis', e);
+            }
+        };
+
+        const addLocalApi = (api) => {
+            const arr = getLocalApis();
+            arr.unshift(api);
+            saveLocalApis(arr);
+        };
+
+        const toggleLocalPublished = (id, flag) => {
+            const arr = getLocalApis();
+            const idx = arr.findIndex(a => a.id === id);
+            if (idx !== -1) {
+                arr[idx].published = flag;
+                arr[idx].updatedAt = new Date().toISOString();
+                saveLocalApis(arr);
+            }
         };
 
         const myApisSection = myApisView.querySelector('.my-apis-section');
@@ -182,8 +233,11 @@ const popupApp = {
                 <div class="empty-state">
                     <h3>No APIs generated yet.</h3>
                     <p>Create a workflow and generate an API to see it here.</p>
+                    <div style="margin-top:12px"><button id="generate-first-api-btn" class="btn btn-primary">Generate your first API</button></div>
                 </div>
             `;
+            const genBtn = document.getElementById('generate-first-api-btn');
+            if (genBtn) genBtn.addEventListener('click', () => showRecording());
         };
 
         const renderApis = (apis) => {
@@ -221,8 +275,9 @@ const popupApp = {
                     <div class="api-actions">
                         <button type="button" class="btn btn-secondary api-action-btn view-api-btn">View API</button>
                         <button type="button" class="btn btn-secondary api-action-btn copy-endpoint-btn" data-original-text="Copy Endpoint">Copy Endpoint</button>
-                        <button type="button" class="btn btn-secondary api-action-btn publish-api-btn">${api.published ? 'Already Published' : 'Publish to Marketplace'}</button>
-                        <button type="button" class="btn btn-danger api-action-btn delete-api-btn">Delete</button>
+                                <button type="button" class="btn btn-secondary api-action-btn publish-api-btn">${api.published ? 'Unpublish' : 'Publish to Marketplace'}</button>
+                                <button type="button" class="btn btn-secondary api-action-btn download-api-card-btn">Download API</button>
+                                <button type="button" class="btn btn-danger api-action-btn delete-api-btn">Delete</button>
                     </div>
                 `;
 
@@ -252,14 +307,14 @@ const popupApp = {
                     }
                 });
 
-                if (api.published) {
+                // Publish or Unpublish handler
+                publishBtn.addEventListener('click', async () => {
+                    const willPublish = !api.published;
                     publishBtn.disabled = true;
-                } else {
-                    publishBtn.addEventListener('click', async () => {
-                        publishBtn.disabled = true;
-                        publishBtn.textContent = 'Publishing...';
-                        try {
-                            // First, publish to marketplace service
+                    publishBtn.textContent = willPublish ? 'Publishing...' : 'Unpublishing...';
+                    try {
+                        if (willPublish) {
+                            // Publish to marketplace first
                             const mp = await fetch('http://localhost:5000/marketplace/publish', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
@@ -277,31 +332,54 @@ const popupApp = {
                             if (!mp.ok) {
                                 alert(mpData.message || 'Publishing to marketplace failed.');
                                 publishBtn.disabled = false;
-                                publishBtn.textContent = 'Publish to Marketplace';
+                                publishBtn.textContent = willPublish ? 'Publish to Marketplace' : 'Unpublish';
                                 return;
                             }
+                        }
 
-                            // Then, mark as published in our My APIs store
-                            const mark = await fetch(`http://localhost:5000/api/my-apis/${api.id}/publish`, {
-                                method: 'POST'
-                            });
+                        // Toggle published state in our store (backend preferred)
+                        const mark = await fetch(`http://localhost:5000/api/my-apis/${api.id}/publish`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ published: willPublish })
+                        });
 
-                            if (!mark.ok) {
-                                alert('Published on marketplace but failed to update API state.');
-                                publishBtn.disabled = false;
-                                publishBtn.textContent = 'Publish to Marketplace';
-                                return;
-                            }
+                        if (!mark.ok) {
+                            // Fallback: try to update localStorage if backend unavailable
+                            const d = await mark.json().catch(() => ({}));
+                            console.warn('[ForgeFlow] failed to toggle publish state', d);
+                            // update local storage fallback
+                            toggleLocalPublished(api.id, willPublish);
+                        }
 
-                            publishBtn.textContent = 'Already Published';
-                            publishBtn.disabled = true;
-                            // Update stats
-                            loadMyApis();
+                        // Refresh UI
+                        loadMyApis();
+                    } catch (err) {
+                        console.error('[ForgeFlow] publish toggle failed', err);
+                        alert('Unable to change publish state.');
+                        publishBtn.disabled = false;
+                        publishBtn.textContent = api.published ? 'Unpublish' : 'Publish to Marketplace';
+                    }
+                });
+
+                // Download API from card
+                const downloadCardBtn = article.querySelector('.download-api-card-btn');
+                if (downloadCardBtn) {
+                    downloadCardBtn.addEventListener('click', async () => {
+                        try {
+                            const content = api.generatedCode || JSON.stringify({ name: api.name, endpoint: api.endpoint, method: api.method, version: api.version }, null, 2);
+                            const blob = new Blob([content], { type: 'application/json' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `${(api.name || 'api').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-api.json`;
+                            document.body.appendChild(a);
+                            a.click();
+                            a.remove();
+                            setTimeout(() => URL.revokeObjectURL(url), 100);
                         } catch (err) {
-                            console.error('[ForgeFlow] publish failed', err);
-                            alert('Unable to publish. Please try again.');
-                            publishBtn.disabled = false;
-                            publishBtn.textContent = 'Publish to Marketplace';
+                            console.error('[ForgeFlow] download card api failed', err);
+                            alert('Unable to download API.');
                         }
                     });
                 }
@@ -315,12 +393,26 @@ const popupApp = {
                             // update stats
                             loadMyApis();
                         } else {
+                            // Fallback to local removal
                             const d = await resp.json().catch(() => ({}));
-                            alert(d.message || 'Unable to delete API.');
+                            console.warn('[ForgeFlow] delete failed on server', d);
+                            const locals = getLocalApis().filter(a => a.id !== api.id);
+                            saveLocalApis(locals);
+                            article.remove();
+                            loadMyApis();
                         }
                     } catch (err) {
                         console.error('[ForgeFlow] delete failed', err);
-                        alert('Unable to delete API.');
+                        // Fallback: remove from local storage
+                        try {
+                            const locals = getLocalApis().filter(a => a.id !== api.id);
+                            saveLocalApis(locals);
+                            article.remove();
+                            loadMyApis();
+                        } catch (e) {
+                            console.error('[ForgeFlow] local delete failed', e);
+                            alert('Unable to delete API.');
+                        }
                     }
                 });
             });
@@ -331,13 +423,33 @@ const popupApp = {
                 const { ok, data } = await fetchJson('http://localhost:5000/api/my-apis');
                 if (!ok) {
                     console.warn('[ForgeFlow] failed to load My APIs', data);
-                    renderEmptyState();
+                    const local = getLocalApis();
+                    if (!local || local.length === 0) {
+                        renderEmptyState();
+                    } else {
+                        renderApis(local);
+                    }
                     return;
                 }
-                renderApis(data || []);
+                // Merge any locally-saved APIs that are not present on the server
+                try {
+                    const local = getLocalApis();
+                    const merged = (data || []).slice();
+                    (local || []).forEach((l) => {
+                        if (!merged.find(m => m.id === l.id)) merged.unshift(l);
+                    });
+                    renderApis(merged);
+                } catch (e) {
+                    renderApis(data || []);
+                }
             } catch (err) {
                 console.error('[ForgeFlow] loadMyApis error', err);
-                renderEmptyState();
+                const local = getLocalApis();
+                if (!local || local.length === 0) {
+                    renderEmptyState();
+                } else {
+                    renderApis(local);
+                }
             }
         };
 
