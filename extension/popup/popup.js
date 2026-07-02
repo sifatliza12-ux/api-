@@ -306,8 +306,64 @@ const popupApp = {
             downloadApiButton.addEventListener('click', handleDownloadApi);
         }
 
+        const handlePublishMarketplace = async () => {
+            // TODO: Replace sample payload with real API metadata and include authentication headers.
+            if (!publishMarketplaceButton) return;
+
+            const originalText = publishMarketplaceButton.dataset ? (publishMarketplaceButton.dataset.originalText || publishMarketplaceButton.textContent) : publishMarketplaceButton.textContent;
+
+            try {
+                publishMarketplaceButton.disabled = true;
+                publishMarketplaceButton.textContent = 'Publishing...';
+
+                const payload = {
+                    name: 'User Workflow API',
+                    version: '1.0.0',
+                    method: 'POST',
+                    endpoint: '/api/v1/workflow',
+                    price: 10,
+                    publisher: 'Demo User'
+                };
+
+                const response = await fetch('http://localhost:5000/marketplace/publish', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json().catch(() => ({}));
+
+                if (response.ok) {
+                    try {
+                        alert('API published successfully.');
+                    } catch (e) {
+                        console.log('[ForgeFlow] publish success (alert failed)');
+                    }
+                } else {
+                    const msg = data.message || 'Publishing failed. Please try again.';
+                    try {
+                        alert(msg);
+                    } catch (e) {
+                        console.error('[ForgeFlow] publish error', msg);
+                    }
+                }
+            } catch (err) {
+                console.error('[ForgeFlow] publish to marketplace failed', err);
+                try {
+                    alert('Unable to publish the API. Please try again.');
+                } catch (e) {
+                    console.error('[ForgeFlow] alert failed', e);
+                }
+            } finally {
+                publishMarketplaceButton.disabled = false;
+                publishMarketplaceButton.textContent = originalText;
+            }
+        };
+
         if (publishMarketplaceButton) {
-            publishMarketplaceButton.addEventListener('click', () => handlePlaceholderAction('Publish to Marketplace'));
+            publishMarketplaceButton.addEventListener('click', handlePublishMarketplace);
         }
 
         if (backToDashboardGeneratedButton) {
