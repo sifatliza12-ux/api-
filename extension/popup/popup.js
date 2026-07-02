@@ -33,6 +33,7 @@ const popupApp = {
         }
 
         let generationTimeoutId = null;
+        let loginErrorMessage = null;
 
         const clearGenerationTimeout = () => {
             if (generationTimeoutId) {
@@ -123,13 +124,89 @@ const popupApp = {
             // TODO: Replace this visual-only feedback with actual clipboard integration.
         };
 
+        const updateLoginError = (message) => {
+            if (!loginErrorMessage) {
+                loginErrorMessage = document.createElement('p');
+                loginErrorMessage.className = 'login-error';
+                loginErrorMessage.setAttribute('role', 'alert');
+                loginButton?.parentNode?.insertBefore(loginErrorMessage, loginButton.nextSibling);
+            }
+
+            loginErrorMessage.textContent = message;
+        };
+
+        const clearLoginError = () => {
+            if (loginErrorMessage) {
+                loginErrorMessage.textContent = '';
+            }
+        };
+
+        const setLoginButtonState = (isLoading) => {
+            if (!loginButton) {
+                return;
+            }
+
+            loginButton.disabled = isLoading;
+            loginButton.textContent = isLoading ? 'Logging in...' : 'Login';
+        };
+
+        const handleLogin = async () => {
+            if (!loginButton) {
+                return;
+            }
+
+            const emailInput = document.getElementById('email');
+            const passwordInput = document.getElementById('password');
+
+            if (!emailInput || !passwordInput) {
+                updateLoginError('Unable to access login form.');
+                return;
+            }
+
+            const payload = {
+                email: emailInput.value,
+                password: passwordInput.value
+            };
+
+            setLoginButtonState(true);
+            clearLoginError();
+
+            try {
+                const response = await fetch('http://localhost:5000/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json().catch(() => ({}));
+
+                if (response.ok && data.success === true) {
+                    showDashboard();
+                    // TODO: Add JWT authentication handling here.
+                    // TODO: Store auth token with chrome.storage.
+                    // TODO: Add logout flow for session termination.
+                    // TODO: Add session persistence for returning users.
+                    return;
+                }
+
+                updateLoginError(data.message || 'Login failed. Please try again.');
+            } catch (error) {
+                console.error('Login request failed:', error);
+                updateLoginError('Unable to reach the ForgeFlow server. Please try again.');
+            } finally {
+                setLoginButtonState(false);
+            }
+        };
+
         const handlePlaceholderAction = (label) => {
             console.info(`${label} button pressed (placeholder only).`);
             // TODO: Connect this placeholder to the real API action later.
         };
 
         if (loginButton) {
-            loginButton.addEventListener('click', showDashboard);
+            loginButton.addEventListener('click', handleLogin);
         }
 
         if (trialButton) {
