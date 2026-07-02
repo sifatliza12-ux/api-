@@ -18,6 +18,8 @@ const popupApp = {
         const startRecordingButton = document.getElementById('start-recording-btn');
         const backToDashboardButton = document.getElementById('back-to-dashboard-btn');
         const recordStartButton = document.getElementById('record-start-btn');
+        const recordPauseButton = document.getElementById('record-pause-btn');
+        const recordStopButton = document.getElementById('record-stop-btn');
         const recordCancelButton = document.getElementById('record-cancel-btn');
         const copyEndpointButton = document.getElementById('copy-endpoint-btn');
         const downloadApiButton = document.getElementById('download-api-btn');
@@ -29,8 +31,17 @@ const popupApp = {
         const backToDashboardFromMarketplaceButton = document.getElementById('back-to-dashboard-from-marketplace-btn');
 
         if (!loginView || !dashboardView || !recordingView || !generationView || !generatedView || !myApisView || !marketplaceView) {
+            console.error('[ForgeFlow] required views missing');
             return;
         }
+
+        console.log('[ForgeFlow] popup init', {
+            startRecordingButton: !!startRecordingButton,
+            recordStartButton: !!recordStartButton,
+            recordPauseButton: !!recordPauseButton,
+            recordStopButton: !!recordStopButton,
+            recordCancelButton: !!recordCancelButton
+        });
 
         let generationTimeoutId = null;
         let loginErrorMessage = null;
@@ -60,13 +71,29 @@ const popupApp = {
             });
         };
 
-        const showDashboard = () => {
-            showView('dashboard');
-            // TODO: Add analytics or state tracking for dashboard entry.
+        const navigateToDashboard = () => {
+            loginView.hidden = true;
+            dashboardView.hidden = false;
+        };
+
+        const handleFreeTrialNavigation = () => {
+            navigateToDashboard();
+        };
+
+        const navigateToRecording = () => {
+            clearGenerationTimeout();
+            loginView.hidden = true;
+            dashboardView.hidden = true;
+            recordingView.hidden = false;
+            generationView.hidden = true;
+            generatedView.hidden = true;
+            myApisView.hidden = true;
+            marketplaceView.hidden = true;
         };
 
         const showRecording = () => {
-            showView('recording');
+            navigateToRecording();
+            console.log('[ForgeFlow] showRecording executed');
             // TODO: Connect to recording service or state store later.
         };
 
@@ -99,7 +126,7 @@ const popupApp = {
         };
 
         const handleCancelRecording = () => {
-            showDashboard();
+            navigateToDashboard();
             // TODO: Reset recording state when the real workflow is implemented.
         };
 
@@ -182,12 +209,11 @@ const popupApp = {
 
                 const data = await response.json().catch(() => ({}));
 
-                if (response.ok && data.success === true) {
-                    showDashboard();
-                    // TODO: Add JWT authentication handling here.
-                    // TODO: Store auth token with chrome.storage.
-                    // TODO: Add logout flow for session termination.
-                    // TODO: Add session persistence for returning users.
+                const isLoginSuccessful = response.ok;
+
+                if (isLoginSuccessful) {
+                    clearLoginError();
+                    handleFreeTrialNavigation();
                     return;
                 }
 
@@ -207,10 +233,12 @@ const popupApp = {
 
         if (loginButton) {
             loginButton.addEventListener('click', handleLogin);
+        } else {
+            console.error('[ForgeFlow] login button not found');
         }
 
         if (trialButton) {
-            trialButton.addEventListener('click', showDashboard);
+            trialButton.addEventListener('click', handleFreeTrialNavigation);
         }
 
         if (startRecordingButton) {
@@ -218,7 +246,7 @@ const popupApp = {
         }
 
         if (backToDashboardButton) {
-            backToDashboardButton.addEventListener('click', showDashboard);
+            backToDashboardButton.addEventListener('click', navigateToDashboard);
         }
 
         if (recordStartButton) {
