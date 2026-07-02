@@ -89,11 +89,11 @@
                     <span class="feature-icon">◫</span>
                     <h4>Marketplace</h4>
                 </article>
-                <article class="feature-card">
+                <article class="feature-card" id="subscription-card">
                     <span class="feature-icon">◎</span>
                     <h4>Subscription</h4>
                 </article>
-                <article class="feature-card">
+                <article class="feature-card" id="settings-card">
                     <span class="feature-icon">⚙</span>
                     <h4>Settings</h4>
                 </article>
@@ -108,10 +108,10 @@
             </section>
 
             <nav class="bottom-nav" aria-label="Bottom navigation">
-                <button type="button" class="nav-item active" aria-label="Open home view">Home</button>
-                <button type="button" class="nav-item" aria-label="View APIs">APIs</button>
-                <button type="button" class="nav-item" aria-label="View marketplace">Marketplace</button>
-                <button type="button" class="nav-item" aria-label="Open profile">Profile</button>
+                <button type="button" id="nav-home" class="nav-item active" aria-label="Open home view">Home</button>
+                <button type="button" id="nav-apis" class="nav-item" aria-label="View APIs">APIs</button>
+                <button type="button" id="nav-marketplace" class="nav-item" aria-label="View marketplace">Marketplace</button>
+                <button type="button" id="nav-profile" class="nav-item" aria-label="Open profile">Profile</button>
             </nav>
         </section>
 
@@ -326,6 +326,45 @@
             </section>
 
             <p class="footer-note">My APIs will support real CRUD actions and endpoint generation in a future milestone.</p>
+        </section>
+
+        <!-- SUBSCRIPTION PLACEHOLDER -->
+        <section class="view subscription-view" id="subscription-view" hidden aria-label="Subscription view">
+            <header class="screen-header">
+                <button type="button" id="back-to-dashboard-from-subscription-btn" class="icon-btn" aria-label="Return to dashboard">←</button>
+                <h2>Subscription</h2>
+                <div class="header-spacer" aria-hidden="true"></div>
+            </header>
+            <section class="placeholder-card">
+                <h3>Subscription Management</h3>
+                <p>Manage your plan, billing, and team access here. (Placeholder)</p>
+            </section>
+        </section>
+
+        <!-- SETTINGS PLACEHOLDER -->
+        <section class="view settings-view" id="settings-view" hidden aria-label="Settings view">
+            <header class="screen-header">
+                <button type="button" id="back-to-dashboard-from-settings-btn" class="icon-btn" aria-label="Return to dashboard">←</button>
+                <h2>Settings</h2>
+                <div class="header-spacer" aria-hidden="true"></div>
+            </header>
+            <section class="placeholder-card">
+                <h3>Settings</h3>
+                <p>Application preferences and integrations. (Placeholder)</p>
+            </section>
+        </section>
+
+        <!-- PROFILE PLACEHOLDER -->
+        <section class="view profile-view" id="profile-view" hidden aria-label="Profile view">
+            <header class="screen-header">
+                <button type="button" id="back-to-dashboard-from-profile-btn" class="icon-btn" aria-label="Return to dashboard">←</button>
+                <h2>Profile</h2>
+                <div class="header-spacer" aria-hidden="true"></div>
+            </header>
+            <section class="placeholder-card">
+                <h3>Your Profile</h3>
+                <p>View and edit your user profile. (Placeholder)</p>
+            </section>
         </section>
 
         <!-- MARKETPLACE SCREEN -->

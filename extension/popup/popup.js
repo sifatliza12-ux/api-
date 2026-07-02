@@ -27,6 +27,15 @@ const popupApp = {
         const backToDashboardGeneratedButton = document.getElementById('back-to-dashboard-generated-btn');
         const myApisCard = document.getElementById('my-apis-card');
         const backToDashboardFromMyApisButton = document.getElementById('back-to-dashboard-from-my-apis-btn');
+        const subscriptionCard = document.getElementById('subscription-card');
+        const settingsCard = document.getElementById('settings-card');
+        const backToDashboardFromSubscriptionButton = document.getElementById('back-to-dashboard-from-subscription-btn');
+        const backToDashboardFromSettingsButton = document.getElementById('back-to-dashboard-from-settings-btn');
+        const backToDashboardFromProfileButton = document.getElementById('back-to-dashboard-from-profile-btn');
+        const navHome = document.getElementById('nav-home');
+        const navApis = document.getElementById('nav-apis');
+        const navMarketplace = document.getElementById('nav-marketplace');
+        const navProfile = document.getElementById('nav-profile');
         const marketplaceCard = document.getElementById('marketplace-card');
         const backToDashboardFromMarketplaceButton = document.getElementById('back-to-dashboard-from-marketplace-btn');
 
@@ -45,6 +54,7 @@ const popupApp = {
 
         let generationTimeoutId = null;
         let loginErrorMessage = null;
+        let lastGeneratedApi = null;
 
         const clearGenerationTimeout = () => {
             if (generationTimeoutId) {
@@ -61,7 +71,10 @@ const popupApp = {
                 generation: generationView,
                 generated: generatedView,
                 myApis: myApisView,
-                marketplace: marketplaceView
+                marketplace: marketplaceView,
+                subscription: document.getElementById('subscription-view'),
+                settings: document.getElementById('settings-view'),
+                profile: document.getElementById('profile-view')
             };
 
             clearGenerationTimeout();
@@ -75,6 +88,9 @@ const popupApp = {
             loginView.hidden = true;
             dashboardView.hidden = false;
         };
+
+        // Alias used by various back buttons in the DOM
+        const showDashboard = navigateToDashboard;
 
         const handleFreeTrialNavigation = () => {
             navigateToDashboard();
@@ -104,12 +120,288 @@ const popupApp = {
 
         const showGenerated = () => {
             showView('generated');
-            // TODO: Persist the generated API metadata when the backend is available.
+            // Persist the generated API metadata when the backend is available.
+            // Create a record on the backend so it appears under My APIs.
+            (async () => {
+                try {
+                    const payload = {
+                        name: 'User Workflow API',
+                        version: 'v1.0',
+                        method: 'POST',
+                        endpoint: '/api/v1/workflow',
+                        generatedCode: '// Example generated code for User Workflow API',
+                        published: false
+                    };
+
+                    const resp = await fetch('http://localhost:5000/api/my-apis', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (resp.ok) {
+                        lastGeneratedApi = await resp.json().catch(() => null);
+                    } else {
+                        console.warn('[ForgeFlow] failed to save generated API', resp.status);
+                    }
+                } catch (err) {
+                    console.error('[ForgeFlow] error saving generated API', err);
+                }
+            })();
         };
 
         const showMyApis = () => {
             showView('myApis');
-            // TODO: Load generated APIs from backend when the API service is available.
+            // Load generated APIs from backend
+            loadMyApis();
+        };
+
+        const fetchJson = async (url, opts = {}) => {
+            const response = await fetch(url, opts);
+            const data = await response.json().catch(() => ({}));
+            return { ok: response.ok, status: response.status, data };
+        };
+
+        const myApisSection = myApisView.querySelector('.my-apis-section');
+        const statsCards = myApisView.querySelectorAll('.stat-card--compact strong');
+
+        const updateStats = (apis) => {
+            const total = apis.length;
+            const published = apis.filter(a => a.published).length;
+            const drafts = total - published;
+
+            if (statsCards && statsCards.length >= 3) {
+                statsCards[0].textContent = String(total);
+                statsCards[1].textContent = String(published);
+                statsCards[2].textContent = String(drafts);
+            }
+        };
+
+        const renderEmptyState = () => {
+            myApisSection.innerHTML = `
+                <div class="empty-state">
+                    <h3>No APIs generated yet.</h3>
+                    <p>Create a workflow and generate an API to see it here.</p>
+                </div>
+            `;
+        };
+
+        const renderApis = (apis) => {
+            if (!myApisSection) return;
+            if (!apis || apis.length === 0) {
+                updateStats([]);
+                renderEmptyState();
+                return;
+            }
+
+            updateStats(apis);
+
+            myApisSection.innerHTML = '';
+
+            apis.forEach((api) => {
+                const article = document.createElement('article');
+                article.className = 'api-card';
+                article.dataset.id = api.id;
+
+                const statusClass = api.published ? 'status-badge--published' : (api.status === 'Draft' ? 'status-badge--draft' : 'status-badge--active');
+                const statusText = api.published ? 'Published' : (api.status || 'Draft');
+
+                article.innerHTML = `
+                    <div class="api-card-top">
+                        <div>
+                            <h3>${escapeHtml(api.name)}</h3>
+                            <p class="api-meta-line">${escapeHtml(api.method)} • ${escapeHtml(api.version || '')} • ${formatRelativeDate(api.createdAt)}</p>
+                        </div>
+                        <span class="status-badge ${statusClass}">${statusText}</span>
+                    </div>
+                    <div class="api-details">
+                        <span>Endpoint: ${escapeHtml(api.endpoint)}</span>
+                        <span>Last Updated: ${formatRelativeDate(api.updatedAt)}</span>
+                    </div>
+                    <div class="api-actions">
+                        <button type="button" class="btn btn-secondary api-action-btn view-api-btn">View API</button>
+                        <button type="button" class="btn btn-secondary api-action-btn copy-endpoint-btn" data-original-text="Copy Endpoint">Copy Endpoint</button>
+                        <button type="button" class="btn btn-secondary api-action-btn publish-api-btn">${api.published ? 'Already Published' : 'Publish to Marketplace'}</button>
+                        <button type="button" class="btn btn-danger api-action-btn delete-api-btn">Delete</button>
+                    </div>
+                `;
+
+                myApisSection.appendChild(article);
+
+                // Attach handlers
+                const viewBtn = article.querySelector('.view-api-btn');
+                const copyBtn = article.querySelector('.copy-endpoint-btn');
+                const publishBtn = article.querySelector('.publish-api-btn');
+                const deleteBtn = article.querySelector('.delete-api-btn');
+
+                viewBtn.addEventListener('click', () => openApiModal(api));
+
+                copyBtn.addEventListener('click', async () => {
+                    try {
+                        await navigator.clipboard.writeText(api.endpoint || '');
+                        const original = copyBtn.dataset.originalText || 'Copy Endpoint';
+                        copyBtn.textContent = 'Copied!';
+                        copyBtn.classList.add('is-copied');
+                        setTimeout(() => {
+                            copyBtn.textContent = original;
+                            copyBtn.classList.remove('is-copied');
+                        }, 1200);
+                    } catch (err) {
+                        console.error('[ForgeFlow] copy failed', err);
+                        alert('Unable to copy endpoint.');
+                    }
+                });
+
+                if (api.published) {
+                    publishBtn.disabled = true;
+                } else {
+                    publishBtn.addEventListener('click', async () => {
+                        publishBtn.disabled = true;
+                        publishBtn.textContent = 'Publishing...';
+                        try {
+                            // First, publish to marketplace service
+                            const mp = await fetch('http://localhost:5000/marketplace/publish', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    name: api.name,
+                                    version: api.version,
+                                    method: api.method,
+                                    endpoint: api.endpoint,
+                                    price: api.price || 10,
+                                    publisher: 'Demo User'
+                                })
+                            });
+
+                            const mpData = await mp.json().catch(() => ({}));
+                            if (!mp.ok) {
+                                alert(mpData.message || 'Publishing to marketplace failed.');
+                                publishBtn.disabled = false;
+                                publishBtn.textContent = 'Publish to Marketplace';
+                                return;
+                            }
+
+                            // Then, mark as published in our My APIs store
+                            const mark = await fetch(`http://localhost:5000/api/my-apis/${api.id}/publish`, {
+                                method: 'POST'
+                            });
+
+                            if (!mark.ok) {
+                                alert('Published on marketplace but failed to update API state.');
+                                publishBtn.disabled = false;
+                                publishBtn.textContent = 'Publish to Marketplace';
+                                return;
+                            }
+
+                            publishBtn.textContent = 'Already Published';
+                            publishBtn.disabled = true;
+                            // Update stats
+                            loadMyApis();
+                        } catch (err) {
+                            console.error('[ForgeFlow] publish failed', err);
+                            alert('Unable to publish. Please try again.');
+                            publishBtn.disabled = false;
+                            publishBtn.textContent = 'Publish to Marketplace';
+                        }
+                    });
+                }
+
+                deleteBtn.addEventListener('click', async () => {
+                    if (!confirm('Delete this API? This action cannot be undone.')) return;
+                    try {
+                        const resp = await fetch(`http://localhost:5000/api/my-apis/${api.id}`, { method: 'DELETE' });
+                        if (resp.ok) {
+                            article.remove();
+                            // update stats
+                            loadMyApis();
+                        } else {
+                            const d = await resp.json().catch(() => ({}));
+                            alert(d.message || 'Unable to delete API.');
+                        }
+                    } catch (err) {
+                        console.error('[ForgeFlow] delete failed', err);
+                        alert('Unable to delete API.');
+                    }
+                });
+            });
+        };
+
+        const loadMyApis = async () => {
+            try {
+                const { ok, data } = await fetchJson('http://localhost:5000/api/my-apis');
+                if (!ok) {
+                    console.warn('[ForgeFlow] failed to load My APIs', data);
+                    renderEmptyState();
+                    return;
+                }
+                renderApis(data || []);
+            } catch (err) {
+                console.error('[ForgeFlow] loadMyApis error', err);
+                renderEmptyState();
+            }
+        };
+
+        const openApiModal = (api) => {
+            // Create a simple modal showing API details and generated code
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.style.position = 'fixed';
+            overlay.style.inset = 0;
+            overlay.style.background = 'rgba(0,0,0,0.5)';
+            overlay.style.display = 'flex';
+            overlay.style.alignItems = 'center';
+            overlay.style.justifyContent = 'center';
+            overlay.style.zIndex = 1000;
+
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.style.background = '#fff';
+            modal.style.borderRadius = '6px';
+            modal.style.padding = '16px';
+            modal.style.maxWidth = '600px';
+            modal.style.width = '100%';
+            modal.innerHTML = `
+                <h3>${escapeHtml(api.name)}</h3>
+                <p><strong>Endpoint:</strong> ${escapeHtml(api.endpoint)}</p>
+                <p><strong>Method:</strong> ${escapeHtml(api.method)}</p>
+                <p><strong>Version:</strong> ${escapeHtml(api.version || '')}</p>
+                <pre style="background:#f6f8fa;padding:8px;border-radius:4px;max-height:240px;overflow:auto">${escapeHtml(api.generatedCode || '')}</pre>
+                <div style="text-align:right;margin-top:8px">
+                    <button class="btn btn-secondary modal-close">Close</button>
+                </div>
+            `;
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        };
+
+        const escapeHtml = (str) => {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        };
+
+        const formatRelativeDate = (iso) => {
+            if (!iso) return 'Unknown';
+            try {
+                const d = new Date(iso);
+                const diff = Date.now() - d.getTime();
+                const mins = Math.floor(diff / 60000);
+                if (mins < 60) return `${mins}m ago`;
+                const hours = Math.floor(mins / 60);
+                if (hours < 24) return `${hours}h ago`;
+                const days = Math.floor(hours / 24);
+                return `${days}d ago`;
+            } catch (e) {
+                return 'Unknown';
+            }
         };
 
         const showMarketplace = () => {
@@ -379,6 +671,35 @@ const popupApp = {
                 }
             });
         }
+
+        if (subscriptionCard) {
+            subscriptionCard.addEventListener('click', () => showView('subscription'));
+            subscriptionCard.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    showView('subscription');
+                }
+            });
+        }
+
+        if (settingsCard) {
+            settingsCard.addEventListener('click', () => showView('settings'));
+            settingsCard.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    showView('settings');
+                }
+            });
+        }
+
+        if (navHome) navHome.addEventListener('click', navigateToDashboard);
+        if (navApis) navApis.addEventListener('click', showMyApis);
+        if (navMarketplace) navMarketplace.addEventListener('click', showMarketplace);
+        if (navProfile) navProfile.addEventListener('click', () => showView('profile'));
+
+        if (backToDashboardFromSubscriptionButton) backToDashboardFromSubscriptionButton.addEventListener('click', showDashboard);
+        if (backToDashboardFromSettingsButton) backToDashboardFromSettingsButton.addEventListener('click', showDashboard);
+        if (backToDashboardFromProfileButton) backToDashboardFromProfileButton.addEventListener('click', showDashboard);
 
         if (backToDashboardFromMyApisButton) {
             backToDashboardFromMyApisButton.addEventListener('click', showDashboard);
