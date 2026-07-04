@@ -5,6 +5,7 @@
 
 const popupApp = {
     init() {
+        console.log('[ForgeFlow][popup] popup script initialized');
         const loginView = document.getElementById('login-view');
         const dashboardView = document.getElementById('dashboard-view');
         const recordingView = document.getElementById('recording-view');
@@ -758,7 +759,34 @@ const popupApp = {
             overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
         };
 
+        const sendRecordingCommand = (type) => {
+            console.log(`[ForgeFlow][popup] about to send ${type}`);
+
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                const activeTab = tabs && tabs[0];
+                if (!activeTab?.id) {
+                    console.error('[ForgeFlow][popup] no active tab available for recording');
+                    return;
+                }
+
+                chrome.tabs.sendMessage(activeTab.id, { type }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('[ForgeFlow][popup] tabs.sendMessage error', chrome.runtime.lastError.message);
+                        return;
+                    }
+
+                    console.log(`[ForgeFlow][popup] ${type} response from content script`, response);
+                });
+            });
+        };
+
+        const startRecordingSession = () => {
+            console.log('[ForgeFlow][popup] start recording requested');
+            sendRecordingCommand('start-recording');
+        };
+
         const handleStartRecording = () => {
+            startRecordingSession();
             showGenerating();
             generationTimeoutId = window.setTimeout(() => {
                 showGenerated();
@@ -924,7 +952,11 @@ const popupApp = {
         }
 
         if (startRecordingButton) {
-            startRecordingButton.addEventListener('click', showRecording);
+            startRecordingButton.addEventListener('click', () => {
+                console.log('[ForgeFlow][popup] Start Recording button clicked');
+                startRecordingSession();
+                showRecording();
+            });
         }
 
         if (backToDashboardButton) {
@@ -932,11 +964,17 @@ const popupApp = {
         }
 
         if (recordStartButton) {
-            recordStartButton.addEventListener('click', handleStartRecording);
+            recordStartButton.addEventListener('click', () => {
+                console.log('[ForgeFlow][popup] Record Start button clicked');
+                handleStartRecording();
+            });
         }
 
         if (recordCancelButton) {
-            recordCancelButton.addEventListener('click', handleCancelRecording);
+            recordCancelButton.addEventListener('click', () => {
+                console.log('[ForgeFlow][popup] Cancel Recording button clicked');
+                handleCancelRecording();
+            });
         }
 
         if (copyEndpointButton) {
