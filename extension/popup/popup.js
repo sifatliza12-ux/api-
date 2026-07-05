@@ -117,7 +117,7 @@ const popupApp = {
         const showRecording = () => {
             navigateToRecording();
             console.log('[ForgeFlow] showRecording executed');
-            // TODO: Connect to recording service or state store later.
+            void updateRecordingView();
         };
 
         const showGenerating = () => {
@@ -759,44 +759,93 @@ const popupApp = {
             overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
         };
 
-        const sendRecordingCommand = (type) => {
-            console.log(`[ForgeFlow][popup] about to send ${type}`);
-
-            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                const activeTab = tabs && tabs[0];
-                if (!activeTab?.id) {
-                    console.error('[ForgeFlow][popup] no active tab available for recording');
+        const sendRuntimeMessage = (message) => new Promise((resolve) => {
+            chrome.runtime.sendMessage(message, (response) => {
+                if (chrome.runtime.lastError) {
+                    resolve({ ok: false, error: chrome.runtime.lastError.message });
                     return;
                 }
 
-                chrome.tabs.sendMessage(activeTab.id, { type }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.error('[ForgeFlow][popup] tabs.sendMessage error', chrome.runtime.lastError.message);
-                        return;
-                    }
-
-                    console.log(`[ForgeFlow][popup] ${type} response from content script`, response);
-                });
+                resolve(response || { ok: true });
             });
+        });
+
+        const updateRecordingView = async () => {
+            try {
+                const response = await sendRuntimeMessage({ type: 'get-recorder-state' });
+                const state = response?.state || {};
+                const isRecording = Boolean(state.isRecording);
+                const statusValue = recordingView.querySelector('.status-value');
+                const indicator = recordingView.querySelector('.recording-indicator');
+                const metrics = recordingView.querySelectorAll('.metric-item strong');
+                const activityText = recordingView.querySelector('.activity-log p');
+
+                if (statusValue) {
+                    statusValue.textContent = isRecording ? 'Recording Active' : 'Ready to Record';
+                }
+
+                if (indicator) {
+                    indicator.classList.toggle('is-recording', isRecording);
+                }
+
+                if (metrics[0]) {
+                    metrics[0].textContent = String(state.events?.length || 0);
+                }
+
+                if (metrics[1]) {
+                    metrics[1].textContent = isRecording ? 'Live' : '00:00';
+                }
+
+                if (activityText) {
+                    activityText.textContent = isRecording
+                        ? `${state.events?.length || 0} event(s) captured. Continue browsing to keep recording.`
+                        : 'No activity yet.';
+                }
+
+                if (recordStartButton) {
+                    recordStartButton.disabled = isRecording;
+                }
+
+                if (recordStopButton) {
+                    recordStopButton.disabled = !isRecording;
+                }
+
+                if (recordPauseButton) {
+                    recordPauseButton.disabled = !isRecording;
+                }
+            } catch (error) {
+                console.error('[ForgeFlow][popup] unable to refresh recording view', error);
+            }
         };
 
-        const startRecordingSession = () => {
+        const startRecordingSession = async () => {
             console.log('[ForgeFlow][popup] start recording requested');
-            sendRecordingCommand('start-recording');
+            const response = await sendRuntimeMessage({ type: 'start-recording', source: 'popup' });
+            if (response?.ok) {
+                await updateRecordingView();
+                return true;
+            }
+
+            console.error('[ForgeFlow][popup] failed to start recording', response);
+            return false;
         };
 
-        const handleStartRecording = () => {
-            startRecordingSession();
-            showGenerating();
-            generationTimeoutId = window.setTimeout(() => {
-                showGenerated();
-            }, 2000);
-            // TODO: Replace this simulated timeout with real recording and generation events.
+        const handleStartRecording = async () => {
+            await startRecordingSession();
+            showRecording();
         };
 
-        const handleCancelRecording = () => {
+        const handleStopRecording = async () => {
+            const response = await sendRuntimeMessage({ type: 'stop-recording', source: 'popup' });
+            if (response?.ok) {
+                await updateRecordingView();
+            }
+            showRecording();
+        };
+
+        const handleCancelRecording = async () => {
+            await sendRuntimeMessage({ type: 'stop-recording', source: 'popup' });
             navigateToDashboard();
-            // TODO: Reset recording state when the real workflow is implemented.
         };
 
         const handleCopyEndpoint = (eventOrButton = copyEndpointButton) => {
@@ -952,10 +1001,10 @@ const popupApp = {
         }
 
         if (startRecordingButton) {
-            startRecordingButton.addEventListener('click', () => {
+            startRecordingButton.addEventListener('click', async () => {
+                console.log('[Recorder] Start clicked');
                 console.log('[ForgeFlow][popup] Start Recording button clicked');
-                startRecordingSession();
-                showRecording();
+                await handleStartRecording();
             });
         }
 
@@ -964,18 +1013,30 @@ const popupApp = {
         }
 
         if (recordStartButton) {
-            recordStartButton.addEventListener('click', () => {
+            recordStartButton.addEventListener('click', async () => {
+                console.log('[Recorder] Record start clicked');
                 console.log('[ForgeFlow][popup] Record Start button clicked');
-                handleStartRecording();
+                await handleStartRecording();
+            });
+        }
+
+        if (recordStopButton) {
+            recordStopButton.addEventListener('click', async () => {
+                console.log('[Recorder] Record stop clicked');
+                console.log('[ForgeFlow][popup] Stop Recording button clicked');
+                await handleStopRecording();
             });
         }
 
         if (recordCancelButton) {
-            recordCancelButton.addEventListener('click', () => {
+            recordCancelButton.addEventListener('click', async () => {
+                console.log('[Recorder] Record cancel clicked');
                 console.log('[ForgeFlow][popup] Cancel Recording button clicked');
-                handleCancelRecording();
+                await handleCancelRecording();
             });
         }
+
+        void updateRecordingView();
 
         if (copyEndpointButton) {
             copyEndpointButton.addEventListener('click', handleCopyEndpoint);
