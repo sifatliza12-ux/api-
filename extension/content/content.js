@@ -18,7 +18,11 @@
         widgetTimer: null,
         startTime: null,
         dragState: null,
-        savedConfirmationActive: false
+        savedConfirmationActive: false,
+        lastKnownUrl: null,
+        scrollThrottleTimer: null,
+        pendingScrollTarget: null,
+        touchStartInfo: null
     });
 
     runtime.initialized = true;
@@ -52,20 +56,67 @@
         return element.tagName.toLowerCase();
     };
 
+    const REDACTED_VALUE = '[REDACTED]';
+
+    const SENSITIVE_FIELD_PATTERN = /pass(word)?|pwd|ssn|social.?sec|card.?(num|number)|cvv|cvc|security.?code|\bpin\b|otp|cvv2|routing.?number|account.?number|secret|token/i;
+
+    const SENSITIVE_AUTOCOMPLETE_VALUES = new Set([
+        'current-password',
+        'new-password',
+        'one-time-code',
+        'cc-number',
+        'cc-csc',
+        'cc-exp',
+        'cc-exp-month',
+        'cc-exp-year'
+    ]);
+
+    // Never record actual values from password fields or fields that look like
+    // they hold sensitive data (card numbers, SSNs, OTPs, etc). The event
+    // itself is still captured — only the value is redacted — so the workflow
+    // shape (e.g. "a login step happened here") is preserved.
+    const isSensitiveField = (target) => {
+        if (!(target instanceof Element)) {
+            return false;
+        }
+
+        if (target instanceof HTMLInputElement && target.type === 'password') {
+            return true;
+        }
+
+        const autocomplete = (target.getAttribute('autocomplete') || '').toLowerCase();
+        if (SENSITIVE_AUTOCOMPLETE_VALUES.has(autocomplete)) {
+            return true;
+        }
+
+        const haystack = [
+            target.getAttribute('name'),
+            target.getAttribute('id'),
+            target.getAttribute('placeholder'),
+            target.getAttribute('aria-label')
+        ].filter(Boolean).join(' ').toLowerCase();
+
+        return SENSITIVE_FIELD_PATTERN.test(haystack);
+    };
+
     const getElementValue = (target) => {
         if (target instanceof HTMLInputElement) {
             if (target.type === 'checkbox' || target.type === 'radio') {
                 return target.checked;
             }
-            return target.value;
+            return isSensitiveField(target) ? REDACTED_VALUE : target.value;
         }
 
-        if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
+        if (target instanceof HTMLTextAreaElement) {
+            return isSensitiveField(target) ? REDACTED_VALUE : target.value;
+        }
+
+        if (target instanceof HTMLSelectElement) {
             return target.value;
         }
 
         if (target instanceof Element && target.isContentEditable) {
-            return target.textContent || '';
+            return isSensitiveField(target) ? REDACTED_VALUE : (target.textContent || '');
         }
 
         return undefined;
@@ -329,12 +380,22 @@
         }
 
         document.removeEventListener('click', handleClick, true);
+        document.removeEventListener('dblclick', handleDoubleClick, true);
         document.removeEventListener('input', handleInput, true);
         document.removeEventListener('change', handleChange, true);
         document.removeEventListener('keydown', handleKeyDown, true);
         document.removeEventListener('keyup', handleKeyUp, true);
+        document.removeEventListener('touchstart', handleTouchStart, true);
+        document.removeEventListener('touchend', handleTouchEnd, true);
         window.removeEventListener('scroll', handleScroll, true);
         window.removeEventListener('popstate', handlePopState);
+
+        if (runtime.scrollThrottleTimer) {
+            window.clearTimeout(runtime.scrollThrottleTimer);
+            runtime.scrollThrottleTimer = null;
+        }
+        runtime.pendingScrollTarget = null;
+        runtime.touchStartInfo = null;
         runtime.listenersAttached = false;
         console.log('[Recorder][content] listeners removed');
     };
@@ -345,7 +406,8 @@
             selector: details.selector || null,
             url: window.location.href,
             pageTitle: document.title,
-            value: details.value ?? null
+            value: details.value ?? null,
+            meta: details.meta || null
         };
 
         chrome.runtime.sendMessage({ type: 'recorder-event', event: payload }, () => {
@@ -366,8 +428,24 @@
         sendEventToServiceWorker(type, details);
     };
 
+    // Records a navigation with both the URL it landed on and, where knowable,
+    // the URL it came from + how it happened (link/reload, SPA pushState /
+    // replaceState, or browser back/forward) so the workflow template can
+    // later tell these apart.
+    const recordNavigation = (method, fromUrlOverride) => {
+        const toUrl = window.location.href;
+        const fromUrl = typeof fromUrlOverride !== 'undefined' ? fromUrlOverride : (runtime.lastKnownUrl || null);
+
+        recordEvent('navigation', {
+            value: toUrl,
+            meta: { fromUrl, method }
+        });
+
+        runtime.lastKnownUrl = toUrl;
+    };
+
     const handlePopState = () => {
-        recordEvent('navigation', { value: window.location.href });
+        recordNavigation('back-forward');
     };
 
     const handleClick = (event) => {
@@ -382,7 +460,25 @@
 
         recordEvent('click', {
             selector: getSelector(target),
-            value: (target.textContent || '').trim().slice(0, 120)
+            value: (target.textContent || '').trim().slice(0, 120),
+            meta: { tag: target.tagName.toLowerCase(), x: event.clientX, y: event.clientY }
+        });
+    };
+
+    const handleDoubleClick = (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) {
+            return;
+        }
+
+        if (target.closest('#forgeflow-recorder-widget')) {
+            return;
+        }
+
+        recordEvent('dblclick', {
+            selector: getSelector(target),
+            value: (target.textContent || '').trim().slice(0, 120),
+            meta: { tag: target.tagName.toLowerCase(), x: event.clientX, y: event.clientY }
         });
     };
 
@@ -440,7 +536,7 @@
 
         recordEvent('keydown', {
             selector: getSelector(target),
-            value: event.key
+            value: isSensitiveField(target) ? REDACTED_VALUE : event.key
         });
     };
 
@@ -456,13 +552,90 @@
 
         recordEvent('keyup', {
             selector: getSelector(target),
-            value: event.key
+            value: isSensitiveField(target) ? REDACTED_VALUE : event.key
         });
     };
 
-    const handleScroll = () => {
+    const isWindowScrollTarget = (target) => (
+        target === document || target === document.documentElement || target === document.body
+    );
+
+    const flushScroll = () => {
+        runtime.scrollThrottleTimer = null;
+        const target = runtime.pendingScrollTarget;
+        runtime.pendingScrollTarget = null;
+
+        if (!target) {
+            return;
+        }
+
+        const windowScroll = isWindowScrollTarget(target);
+        const scrollX = windowScroll ? window.scrollX : target.scrollLeft;
+        const scrollY = windowScroll ? window.scrollY : target.scrollTop;
+
         recordEvent('scroll', {
-            value: `${window.scrollX},${window.scrollY}`
+            selector: windowScroll ? null : getSelector(target),
+            value: `${scrollX},${scrollY}`,
+            meta: { target: windowScroll ? 'window' : (getSelector(target) || 'element') }
+        });
+    };
+
+    // Scroll fires far too often to log every pixel, so we throttle to at
+    // most one recorded scroll event per 250ms per target.
+    const handleScroll = (event) => {
+        const target = event.target === document ? document.documentElement : event.target;
+        runtime.pendingScrollTarget = target;
+
+        if (runtime.scrollThrottleTimer) {
+            return;
+        }
+
+        runtime.scrollThrottleTimer = window.setTimeout(flushScroll, 250);
+    };
+
+    const TOUCH_MOVE_THRESHOLD_PX = 10;
+
+    const handleTouchStart = (event) => {
+        const touch = event.touches[0];
+        if (!touch) {
+            return;
+        }
+
+        runtime.touchStartInfo = {
+            x: touch.clientX,
+            y: touch.clientY,
+            target: event.target
+        };
+    };
+
+    const handleTouchEnd = (event) => {
+        const startInfo = runtime.touchStartInfo;
+        runtime.touchStartInfo = null;
+
+        if (!startInfo) {
+            return;
+        }
+
+        const target = startInfo.target;
+        if (!(target instanceof Element) || target.closest('#forgeflow-recorder-widget')) {
+            return;
+        }
+
+        const touch = event.changedTouches[0];
+        const dx = touch ? touch.clientX - startInfo.x : 0;
+        const dy = touch ? touch.clientY - startInfo.y : 0;
+        const distance = Math.sqrt((dx * dx) + (dy * dy));
+        const touchType = distance > TOUCH_MOVE_THRESHOLD_PX ? 'swipe' : 'tap';
+
+        recordEvent('touch', {
+            selector: getSelector(target),
+            value: touchType,
+            meta: {
+                x: touch ? touch.clientX : null,
+                y: touch ? touch.clientY : null,
+                dx,
+                dy
+            }
         });
     };
 
@@ -472,23 +645,26 @@
         }
 
         document.addEventListener('click', handleClick, true);
+        document.addEventListener('dblclick', handleDoubleClick, true);
         document.addEventListener('input', handleInput, true);
         document.addEventListener('change', handleChange, true);
         document.addEventListener('keydown', handleKeyDown, true);
         document.addEventListener('keyup', handleKeyUp, true);
+        document.addEventListener('touchstart', handleTouchStart, true);
+        document.addEventListener('touchend', handleTouchEnd, true);
         window.addEventListener('scroll', handleScroll, true);
 
         const originalPushState = history.pushState;
         history.pushState = function patchedPushState(...args) {
             const result = originalPushState.apply(this, args);
-            handlePopState();
+            recordNavigation('pushState');
             return result;
         };
 
         const originalReplaceState = history.replaceState;
         history.replaceState = function patchedReplaceState(...args) {
             const result = originalReplaceState.apply(this, args);
-            handlePopState();
+            recordNavigation('replaceState');
             return result;
         };
 
@@ -520,7 +696,7 @@
         runtime.startTime = runtime.startTime || Date.now();
         attachListeners();
         createWidget();
-        recordEvent('navigation', { value: window.location.href });
+        recordNavigation('full-navigation', document.referrer || null);
         console.log('[Recorder][content] recording started', {
             eventCount: runtime.eventCount,
             startTime: runtime.startTime
@@ -528,16 +704,6 @@
     };
 
     const syncWithServiceWorker = (state) => {
-        // TEMPORARY DEBUG (Milestone 3 timer-reset investigation): confirm what
-        // startedAt actually looks like when the content script receives it.
-        console.log('[Recorder][content][DEBUG] syncWithServiceWorker received', {
-            url: window.location.href,
-            isRecording: state?.isRecording,
-            startedAt: state?.startedAt,
-            eventCount: state?.events?.length,
-            existingRuntimeStartTime: runtime.startTime
-        });
-
         if (state?.isRecording) {
             runtime.eventCount = Number(state.events?.length || 0);
             // Use the service worker's authoritative session start time so the

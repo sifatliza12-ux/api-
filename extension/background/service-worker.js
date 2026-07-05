@@ -50,6 +50,22 @@ const getSnapshot = async () => {
     return { ...state, events: [...state.events] };
 };
 
+// Recording can be active across multiple tabs at once, so events can arrive
+// concurrently. Without serialization, two near-simultaneous
+// read-modify-write cycles (getSnapshot -> saveState) can race: both read the
+// same events array, and the second write silently clobbers the first's
+// appended event. This queue forces every state mutation to complete fully
+// before the next one starts, regardless of which tab/listener triggered it.
+let stateQueue = Promise.resolve();
+
+const enqueueStateOp = (operation) => {
+    const result = stateQueue.then(operation, operation);
+    // Keep the queue alive even if this operation failed, so a single error
+    // doesn't permanently stall every future state mutation.
+    stateQueue = result.then(() => undefined, () => undefined);
+    return result;
+};
+
 const getActiveTab = async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     return tab || null;
@@ -95,19 +111,10 @@ const syncTab = async (tabId, state) => {
         return { ok: false, error: 'No tab available' };
     }
 
-    // TEMPORARY DEBUG (Milestone 3 timer-reset investigation): confirm what
-    // startedAt actually looks like at the moment it's sent to a tab.
-    console.log('[Recorder][service-worker][DEBUG] syncTab sending', {
-        tabId,
-        isRecording: state?.isRecording,
-        startedAt: state?.startedAt,
-        eventCount: state?.events?.length
-    });
-
     return sendToTab(tabId, { type: 'recorder:sync', state });
 };
 
-const startRecording = async (tabId) => {
+const startRecording = (tabId) => enqueueStateOp(async () => {
     const currentState = await getSnapshot();
     const activeTab = await getActiveTab();
     const targetTabId = tabId || activeTab?.id || null;
@@ -150,9 +157,9 @@ const startRecording = async (tabId) => {
     }
 
     return { ok: true, state: nextState };
-};
+});
 
-const stopRecording = async (tabId) => {
+const stopRecording = (tabId) => enqueueStateOp(async () => {
     const activeTab = await getActiveTab();
     const targetTabId = tabId || activeTab?.id || null;
     const currentState = await getSnapshot();
@@ -170,7 +177,7 @@ const stopRecording = async (tabId) => {
     }
 
     return { ok: true, state: nextState };
-};
+});
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[Recorder][service-worker] received', request);
@@ -202,31 +209,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
 
             if (request?.type === 'recorder-event') {
-                const currentState = await getSnapshot();
-                if (!currentState.isRecording) {
-                    sendResponse({ ok: true, state: currentState });
-                    return;
-                }
+                const result = await enqueueStateOp(async () => {
+                    const currentState = await getSnapshot();
+                    if (!currentState.isRecording) {
+                        return { ok: true, state: currentState };
+                    }
 
-                const nextEvent = {
-                    timestamp: new Date().toISOString(),
-                    type: request.event?.type || 'unknown',
-                    selector: request.event?.selector || null,
-                    url: request.event?.url || sender.url || currentState.activeTabUrl,
-                    pageTitle: request.event?.pageTitle || document.title || currentState.pageTitle,
-                    value: request.event?.value ?? null
-                };
+                    const nextEvent = {
+                        timestamp: new Date().toISOString(),
+                        type: request.event?.type || 'unknown',
+                        selector: request.event?.selector || null,
+                        url: request.event?.url || sender.url || currentState.activeTabUrl,
+                        pageTitle: request.event?.pageTitle || currentState.pageTitle,
+                        value: request.event?.value ?? null,
+                        meta: request.event?.meta || null
+                    };
 
-                const nextState = await saveState({
-                    ...currentState,
-                    isRecording: true,
-                    events: [...currentState.events, nextEvent],
-                    activeTabId: sender.tab?.id || currentState.activeTabId,
-                    activeTabUrl: sender.url || currentState.activeTabUrl,
-                    pageTitle: request.event?.pageTitle || currentState.pageTitle
+                    const nextState = await saveState({
+                        ...currentState,
+                        isRecording: true,
+                        events: [...currentState.events, nextEvent],
+                        activeTabId: sender.tab?.id || currentState.activeTabId,
+                        activeTabUrl: sender.url || currentState.activeTabUrl,
+                        pageTitle: request.event?.pageTitle || currentState.pageTitle
+                    });
+
+                    return { ok: true, state: nextState };
                 });
 
-                sendResponse({ ok: true, state: nextState });
+                sendResponse(result);
                 return;
             }
 
@@ -277,6 +288,37 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             console.warn('[Recorder][service-worker] tab navigation sync failed', error);
         }
     })();
+});
+
+chrome.tabs.onCreated.addListener((tab) => {
+    enqueueStateOp(async () => {
+        const state = await getSnapshot();
+        if (!state.isRecording) {
+            return;
+        }
+
+        const nextEvent = {
+            timestamp: new Date().toISOString(),
+            type: 'new_page',
+            selector: null,
+            url: tab.url || tab.pendingUrl || '',
+            pageTitle: tab.title || '',
+            value: null,
+            meta: {
+                openerTabId: tab.openerTabId ?? null,
+                newTabId: tab.id
+            }
+        };
+
+        await saveState({
+            ...state,
+            events: [...state.events, nextEvent]
+        });
+
+        console.log('[Recorder][service-worker] new_page event recorded', nextEvent);
+    }).catch((error) => {
+        console.warn('[Recorder][service-worker] failed to record new_page event', error);
+    });
 });
 
 chrome.runtime.onInstalled.addListener(() => {
