@@ -95,14 +95,41 @@ const syncTab = async (tabId, state) => {
         return { ok: false, error: 'No tab available' };
     }
 
+    // TEMPORARY DEBUG (Milestone 3 timer-reset investigation): confirm what
+    // startedAt actually looks like at the moment it's sent to a tab.
+    console.log('[Recorder][service-worker][DEBUG] syncTab sending', {
+        tabId,
+        isRecording: state?.isRecording,
+        startedAt: state?.startedAt,
+        eventCount: state?.events?.length
+    });
+
     return sendToTab(tabId, { type: 'recorder:sync', state });
 };
 
 const startRecording = async (tabId) => {
+    const currentState = await getSnapshot();
     const activeTab = await getActiveTab();
     const targetTabId = tabId || activeTab?.id || null;
+
+    if (currentState.isRecording) {
+        // A session is already running — re-sync the requesting tab without
+        // wiping the events collected so far.
+        console.log('[Recorder][service-worker] start-recording ignored, session already active', {
+            eventCount: currentState.events.length,
+            startedAt: currentState.startedAt
+        });
+
+        if (targetTabId) {
+            await injectRecorderIntoTab(targetTabId);
+            await syncTab(targetTabId, currentState);
+        }
+
+        return { ok: true, state: currentState };
+    }
+
     const nextState = await saveState({
-        ...(await getSnapshot()),
+        ...currentState,
         isRecording: true,
         events: [],
         activeTabId: targetTabId,
@@ -110,6 +137,11 @@ const startRecording = async (tabId) => {
         pageTitle: activeTab?.title || '',
         startedAt: new Date().toISOString(),
         stoppedAt: null
+    });
+
+    console.log('[Recorder][service-worker] recording started', {
+        tabId: targetTabId,
+        startedAt: nextState.startedAt
     });
 
     if (targetTabId) {
