@@ -156,6 +156,17 @@ h1 {
     gap: 12px;
 }
 
+.login-error {
+    margin-top: -4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--danger);
+}
+
+.login-error:empty {
+    display: none;
+}
+
 .field {
     display: flex;
     flex-direction: column;
@@ -244,6 +255,31 @@ h1 {
     text-align: center;
     font-size: 11px;
     color: #8f81aa;
+}
+
+.auth-switch {
+    margin-top: 4px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.link-btn {
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: 700;
+    color: var(--accent-2);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .dashboard-header,
@@ -850,6 +886,94 @@ pre {
     color: #ffd8d8;
     border: 1px solid rgba(255, 122, 122, 0.26);
     background: rgba(255, 122, 122, 0.12);
+}
+
+/*
+ * .modal is built with a light (#fff) inline background in popup.js, but has
+ * no color rule of its own — without this it inherits body's near-white
+ * `--text`, making every heading/paragraph/pre invisible against the white
+ * modal. .btn-secondary is tuned for the dark page background the same way
+ * (light text on a near-transparent fill), so it needs its own override here
+ * too rather than relying on the global rule.
+ */
+.modal {
+    color: #1f1330;
+}
+
+.modal h3 {
+    margin-bottom: 8px;
+}
+
+.modal p {
+    margin-bottom: 6px;
+    line-height: 1.5;
+}
+
+.modal .btn-secondary {
+    color: #4b3b63;
+    border: 1px solid rgba(31, 19, 48, 0.18);
+    background: rgba(31, 19, 48, 0.04);
+}
+
+.modal h4 {
+    margin-top: 10px;
+    margin-bottom: 6px;
+    font-size: 13px;
+}
+
+.param-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    border-radius: 4px;
+    border: 1px solid rgba(31, 19, 48, 0.14);
+    background: rgba(31, 19, 48, 0.03);
+}
+
+.param-preview-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.param-preview-type {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #6b5b83;
+}
+
+.param-preview-description {
+    font-size: 12px;
+    color: #4b3b63;
+}
+
+.param-preview-default {
+    font-size: 12px;
+    color: #1f1330;
+}
+
+.run-result {
+    padding: 8px 10px;
+    border-radius: 4px;
+    word-break: break-word;
+}
+
+.run-result--success {
+    color: #146c2e;
+    background: rgba(34, 197, 94, 0.12);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.run-result--error {
+    color: #9a1c1c;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.28);
 }
 
 .copy-endpoint-btn.is-copied {

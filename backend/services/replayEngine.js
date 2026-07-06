@@ -1,6 +1,12 @@
 const { chromium } = require('playwright');
 
 const DEFAULT_TIMEOUT_MS = 15000;
+// Non-critical steps (scroll/touch/dblclick) get a shorter timeout so a
+// missing target — e.g. dynamic content like a marquee that isn't present
+// on replay — doesn't stall the whole run for the full critical-step timeout
+// before being skipped.
+const NON_CRITICAL_TIMEOUT_MS = 4000;
+const NON_CRITICAL_STEP_TYPES = new Set(['scroll', 'touch', 'dblclick']);
 const PLACEHOLDER_PATTERN = /^\{\{(.+)\}\}$/;
 
 // Every parameterized step's value is set to exactly "{{paramName}}" (see
@@ -33,8 +39,8 @@ const scrollWindow = async (page, x, y) => {
   await page.evaluate(([sx, sy]) => window.scrollTo(sx, sy), [x, y]);
 };
 
-const scrollElement = async (page, selector, x, y) => {
-  await page.waitForSelector(selector, { state: 'attached', timeout: DEFAULT_TIMEOUT_MS });
+const scrollElement = async (page, selector, x, y, timeoutMs) => {
+  await page.waitForSelector(selector, { state: 'attached', timeout: timeoutMs });
   await page.locator(selector).evaluate((el, [sx, sy]) => {
     el.scrollLeft = sx;
     el.scrollTop = sy;
@@ -121,6 +127,8 @@ const runWorkflow = async ({ steps, parameterValues }) => {
   const context = await browser.newContext({ hasTouch: true });
   const tracker = createPageTracker(await context.newPage());
 
+  const skippedSteps = [];
+
   try {
     for (let i = 0; i < steps.length; i += 1) {
       const step = steps[i];
@@ -150,7 +158,7 @@ const runWorkflow = async ({ steps, parameterValues }) => {
           }
 
           case 'dblclick': {
-            await page.waitForSelector(step.selector, { state: 'visible', timeout: DEFAULT_TIMEOUT_MS });
+            await page.waitForSelector(step.selector, { state: 'visible', timeout: NON_CRITICAL_TIMEOUT_MS });
             await page.dblclick(step.selector);
             break;
           }
@@ -169,7 +177,7 @@ const runWorkflow = async ({ steps, parameterValues }) => {
             if (!target || target === 'window') {
               await scrollWindow(page, x, y);
             } else {
-              await scrollElement(page, target, x, y);
+              await scrollElement(page, target, x, y, NON_CRITICAL_TIMEOUT_MS);
             }
             break;
           }
@@ -194,6 +202,12 @@ const runWorkflow = async ({ steps, parameterValues }) => {
             break;
         }
       } catch (stepError) {
+        if (NON_CRITICAL_STEP_TYPES.has(step.type)) {
+          console.warn(`[Backend] Skipping non-critical step ${i} (${step.type}): ${stepError.message}`);
+          skippedSteps.push({ index: i, type: step.type, reason: stepError.message });
+          continue;
+        }
+
         throw Object.assign(new Error(`Step ${i} (${step.type}) failed: ${stepError.message}`), {
           stepIndex: i,
           stepType: step.type
@@ -205,7 +219,7 @@ const runWorkflow = async ({ steps, parameterValues }) => {
     const finalUrl = finalPage.url();
     const finalTitle = await finalPage.title();
 
-    return { finalUrl, finalTitle };
+    return { finalUrl, finalTitle, skippedSteps };
   } finally {
     await context.close();
     await browser.close();

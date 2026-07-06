@@ -56,6 +56,70 @@
         return element.tagName.toLowerCase();
     };
 
+    const getVisibleText = (el) => {
+        if (!el) {
+            return null;
+        }
+        const text = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+        return text || null;
+    };
+
+    const getAriaLabelledByText = (target) => {
+        const ref = target.getAttribute('aria-labelledby');
+        if (!ref) {
+            return null;
+        }
+        const text = ref.split(/\s+/)
+            .map((id) => getVisibleText(document.getElementById(id)))
+            .filter(Boolean)
+            .join(' ');
+        return text || null;
+    };
+
+    // Last-resort context when there's no label/aria-label/placeholder: the
+    // text immediately next to the field, capped short so we don't pull in
+    // unrelated page copy. Checked in isolation (not recursively), so this
+    // stays cheap to compute on every input/change event.
+    const getNearbyText = (target) => {
+        const prev = target.previousElementSibling;
+        const prevText = getVisibleText(prev);
+        if (prevText && prevText.length <= 60) {
+            return prevText;
+        }
+
+        if (target.parentElement) {
+            const directText = Array.from(target.parentElement.childNodes)
+                .filter((node) => node.nodeType === Node.TEXT_NODE)
+                .map((node) => node.textContent.trim())
+                .filter(Boolean)
+                .join(' ');
+            if (directText && directText.length <= 60) {
+                return directText;
+            }
+        }
+
+        return null;
+    };
+
+    // Naming signal captured alongside (not instead of) the CSS selector used
+    // for replay targeting. getSelector() above still governs how the element
+    // is found when the workflow runs; this is purely for the backend
+    // parameterizer to infer a human-meaningful parameter name/label from,
+    // preferring visible/semantic text over DOM ids or generated class names.
+    const getFieldContext = (target) => {
+        if (!(target instanceof Element)) {
+            return null;
+        }
+
+        return {
+            label: target.labels && target.labels.length ? getVisibleText(target.labels[0]) : null,
+            ariaLabel: target.getAttribute('aria-label') || getAriaLabelledByText(target),
+            placeholder: target.getAttribute('placeholder') || null,
+            name: target.getAttribute('name') || null,
+            nearbyText: getNearbyText(target)
+        };
+    };
+
     const REDACTED_VALUE = '[REDACTED]';
 
     const SENSITIVE_FIELD_PATTERN = /pass(word)?|pwd|ssn|social.?sec|card.?(num|number)|cvv|cvc|security.?code|\bpin\b|otp|cvv2|routing.?number|account.?number|secret|token/i;
@@ -163,17 +227,42 @@
         }
     };
 
-    const showSavedConfirmation = () => {
+    const defaultWorkflowName = () => `Workflow - ${new Date().toLocaleString()}`;
+
+    const showSavingState = () => {
         if (!runtime.widgetRoot) {
             return;
         }
-
-        runtime.savedConfirmationActive = true;
 
         if (runtime.widgetTimer) {
             window.clearInterval(runtime.widgetTimer);
             runtime.widgetTimer = null;
         }
+
+        const title = runtime.widgetRoot.querySelector('[data-role="title"]');
+        const subtitle = runtime.widgetRoot.querySelector('[data-role="subtitle"]');
+        const stopButton = runtime.widgetRoot.querySelector('[data-role="stop"]');
+
+        if (title) {
+            title.textContent = 'API Maker — Saving…';
+        }
+
+        if (subtitle) {
+            subtitle.textContent = 'Sending your workflow to the backend.';
+        }
+
+        if (stopButton) {
+            stopButton.disabled = true;
+            stopButton.textContent = 'Saving…';
+        }
+    };
+
+    const showSaveResult = (save) => {
+        if (!runtime.widgetRoot) {
+            return;
+        }
+
+        runtime.savedConfirmationActive = true;
 
         const dot = runtime.widgetRoot.querySelector('[data-role="dot"]');
         const title = runtime.widgetRoot.querySelector('[data-role="title"]');
@@ -185,12 +274,12 @@
             dot.classList.add('is-idle');
         }
 
-        if (title) {
-            title.textContent = 'API Maker — Saved';
-        }
-
-        if (subtitle) {
-            subtitle.textContent = 'Your workflow has been saved.';
+        if (save?.ok) {
+            if (title) title.textContent = 'API Maker — Saved';
+            if (subtitle) subtitle.textContent = 'Saved! View in My APIs.';
+        } else {
+            if (title) title.textContent = 'API Maker — Save failed';
+            if (subtitle) subtitle.textContent = save?.error || 'Could not save the workflow.';
         }
 
         if (counter) {
@@ -204,7 +293,7 @@
         window.setTimeout(() => {
             runtime.savedConfirmationActive = false;
             removeWidget();
-        }, 1600);
+        }, save?.ok ? 1600 : 3200);
     };
 
     const createWidget = () => {
@@ -330,8 +419,20 @@
             console.log('[Recorder] Widget stop clicked');
             event.preventDefault();
             event.stopPropagation();
-            showSavedConfirmation();
-            void chrome.runtime.sendMessage({ type: 'stop-recording' });
+
+            const input = window.prompt('Name this workflow:', defaultWorkflowName());
+            const name = (input || '').trim() || defaultWorkflowName();
+
+            showSavingState();
+            chrome.runtime.sendMessage({ type: 'stop-recording', save: true, name }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.warn('[Recorder][content] stop-recording failed', chrome.runtime.lastError.message);
+                    showSaveResult({ ok: false, error: chrome.runtime.lastError.message });
+                    return;
+                }
+
+                showSaveResult(response?.save);
+            });
         });
 
         card.addEventListener('pointerdown', (event) => {
@@ -499,7 +600,8 @@
 
         recordEvent('input', {
             selector: getSelector(target),
-            value
+            value,
+            meta: { fieldContext: getFieldContext(target) }
         });
     };
 
@@ -520,7 +622,8 @@
 
         recordEvent('change', {
             selector: getSelector(target),
-            value
+            value,
+            meta: { fieldContext: getFieldContext(target) }
         });
     };
 

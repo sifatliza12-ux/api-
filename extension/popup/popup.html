@@ -37,6 +37,46 @@
                 <button type="button" id="trial-btn" class="btn btn-secondary">Continue with Free Trial</button>
             </form>
 
+            <p class="auth-switch">Don't have an account? <button type="button" id="show-signup-btn" class="link-btn">Sign up</button></p>
+            <p class="footer">Version 1.0.0</p>
+        </section>
+
+        <!-- SIGN UP SCREEN -->
+        <section class="view signup-view" id="signup-view" hidden aria-label="ForgeFlow sign up view">
+            <section class="hero" aria-label="ForgeFlow intro">
+                <div class="brand-mark" aria-hidden="true">FF</div>
+                <div class="hero-copy">
+                    <p class="eyebrow">AI-powered workflow platform</p>
+                    <h1>ForgeFlow</h1>
+                    <p class="subtitle">Create your account.</p>
+                </div>
+            </section>
+
+            <form class="login-form" novalidate>
+                <label class="field">
+                    <span>Full Name</span>
+                    <input type="text" id="signup-name" name="name" placeholder="Jane Doe" autocomplete="name">
+                </label>
+
+                <label class="field">
+                    <span>Email</span>
+                    <input type="email" id="signup-email" name="email" placeholder="you@example.com" autocomplete="email">
+                </label>
+
+                <label class="field">
+                    <span>Password</span>
+                    <input type="password" id="signup-password" name="password" placeholder="Create a password" autocomplete="new-password">
+                </label>
+
+                <label class="field">
+                    <span>Confirm Password</span>
+                    <input type="password" id="signup-confirm-password" name="confirmPassword" placeholder="Re-enter your password" autocomplete="new-password">
+                </label>
+
+                <button type="button" id="signup-btn" class="btn btn-primary">Sign Up</button>
+            </form>
+
+            <p class="auth-switch">Already have an account? <button type="button" id="show-login-btn" class="link-btn">Log in</button></p>
             <p class="footer">Version 1.0.0</p>
         </section>
 
@@ -50,7 +90,10 @@
                         <h2>ForgeFlow</h2>
                     </div>
                 </div>
-                <div class="avatar-badge" aria-label="User avatar">U</div>
+                <div class="header-actions">
+                    <div class="avatar-badge" aria-label="User avatar">U</div>
+                    <button type="button" id="logout-btn" class="icon-btn" aria-label="Log out" title="Log out">⏻</button>
+                </div>
             </header>
 
             <div class="welcome-row welcome-row--compact">

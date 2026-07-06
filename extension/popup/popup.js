@@ -7,6 +7,7 @@ const popupApp = {
     init() {
         console.log('[ForgeFlow][popup] popup script initialized');
         const loginView = document.getElementById('login-view');
+        const signupView = document.getElementById('signup-view');
         const dashboardView = document.getElementById('dashboard-view');
         const recordingView = document.getElementById('recording-view');
         const generationView = document.getElementById('generation-view');
@@ -16,6 +17,10 @@ const popupApp = {
 
         const loginButton = document.getElementById('login-btn');
         const trialButton = document.getElementById('trial-btn');
+        const showSignupButton = document.getElementById('show-signup-btn');
+        const showLoginButton = document.getElementById('show-login-btn');
+        const signupButton = document.getElementById('signup-btn');
+        const logoutButton = document.getElementById('logout-btn');
         const startRecordingButton = document.getElementById('start-recording-btn');
         const backToDashboardButton = document.getElementById('back-to-dashboard-btn');
         const recordStartButton = document.getElementById('record-start-btn');
@@ -63,6 +68,52 @@ const popupApp = {
         let loginErrorMessage = null;
         let lastGeneratedApi = null;
 
+        const AUTH_BASE_URL = 'http://localhost:5000/api/auth';
+        const AUTH_STORAGE_KEY = 'forgeflow.auth';
+
+        // chrome.storage.local (not .session) so a login survives closing and
+        // reopening the browser, not just the popup — that's what "session
+        // persistence" means from a user's point of view.
+        const saveAuthSession = (token, user) => new Promise((resolve) => {
+            chrome.storage.local.set({ [AUTH_STORAGE_KEY]: { token, user } }, resolve);
+        });
+
+        const clearAuthSession = () => new Promise((resolve) => {
+            chrome.storage.local.remove(AUTH_STORAGE_KEY, resolve);
+        });
+
+        const getAuthSession = () => new Promise((resolve) => {
+            chrome.storage.local.get(AUTH_STORAGE_KEY, (result) => {
+                resolve(result?.[AUTH_STORAGE_KEY] || null);
+            });
+        });
+
+        // Confirms the stored token is still valid (not expired, not for a
+        // deleted user) rather than trusting whatever is in local storage.
+        const verifyAuthSession = async (token) => {
+            try {
+                const response = await fetch(`${AUTH_BASE_URL}/me`, {
+                    method: 'GET',
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (!response.ok) {
+                    return null;
+                }
+                const data = await response.json().catch(() => ({}));
+                return data.success ? data.user : null;
+            } catch (error) {
+                console.warn('[ForgeFlow][popup] session verification failed', error);
+                return null;
+            }
+        };
+
+        // Workflows/My APIs are now owned per-user and their routes require
+        // a valid token — every fetch to those endpoints needs this attached.
+        const authHeaders = async () => {
+            const session = await getAuthSession();
+            return session?.token ? { Authorization: `Bearer ${session.token}` } : {};
+        };
+
         const clearGenerationTimeout = () => {
             if (generationTimeoutId) {
                 window.clearTimeout(generationTimeoutId);
@@ -93,6 +144,7 @@ const popupApp = {
 
         const navigateToDashboard = () => {
             loginView.hidden = true;
+            signupView.hidden = true;
             dashboardView.hidden = false;
         };
 
@@ -101,6 +153,18 @@ const popupApp = {
 
         const handleFreeTrialNavigation = () => {
             navigateToDashboard();
+        };
+
+        const showSignup = () => {
+            clearLoginError();
+            loginView.hidden = true;
+            signupView.hidden = false;
+        };
+
+        const showLogin = () => {
+            clearSignupError();
+            signupView.hidden = true;
+            loginView.hidden = false;
         };
 
         const navigateToRecording = () => {
@@ -142,7 +206,7 @@ const popupApp = {
 
                     const resp = await fetch('http://localhost:5000/api/my-apis', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
                         body: JSON.stringify(payload)
                     });
 
@@ -347,7 +411,7 @@ const popupApp = {
                         // Toggle published state in our store (backend preferred)
                         const mark = await fetch(`http://localhost:5000/api/my-apis/${api.id}/publish`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
                             body: JSON.stringify({ published: willPublish })
                         });
 
@@ -394,7 +458,7 @@ const popupApp = {
                 deleteBtn.addEventListener('click', async () => {
                     if (!confirm('Delete this API? This action cannot be undone.')) return;
                     try {
-                        const resp = await fetch(`http://localhost:5000/api/my-apis/${api.id}`, { method: 'DELETE' });
+                        const resp = await fetch(`http://localhost:5000/api/my-apis/${api.id}`, { method: 'DELETE', headers: await authHeaders() });
                         if (resp.ok) {
                             article.remove();
                             // update stats
@@ -427,7 +491,7 @@ const popupApp = {
 
         const loadMyApis = async () => {
             try {
-                const { ok, data } = await fetchJson('http://localhost:5000/api/my-apis');
+                const { ok, data } = await fetchJson('http://localhost:5000/api/my-apis', { headers: await authHeaders() });
                 if (!ok) {
                     console.warn('[ForgeFlow] failed to load My APIs', data);
                     const local = getLocalApis();
@@ -460,7 +524,26 @@ const popupApp = {
             }
         };
 
+        // The creator's own Run API click never asks for input — it always
+        // runs with the stored default/example values (the ones captured
+        // while recording). This just shows what those defaults are, for
+        // transparency, without requiring any interaction. A marketplace
+        // buyer overriding specific values happens through the API directly
+        // (POST body), not through this popup — see workflowController.run.
+        const buildParamPreviewHtml = (param) => `
+            <div class="param-preview">
+                <div class="param-preview-top">
+                    <span class="param-preview-label">${escapeHtml(param.label)}</span>
+                    <span class="param-preview-type">${escapeHtml(param.type)}</span>
+                </div>
+                ${param.description ? `<p class="param-preview-description">${escapeHtml(param.description)}</p>` : ''}
+                <p class="param-preview-default"><strong>Default:</strong> ${escapeHtml(String(param.defaultValue ?? ''))}</p>
+            </div>
+        `;
+
         const openApiModal = (api) => {
+            const parameters = Array.isArray(api.parameters) ? api.parameters : [];
+
             // Create a simple modal showing API details and generated code
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay';
@@ -479,13 +562,24 @@ const popupApp = {
             modal.style.padding = '16px';
             modal.style.maxWidth = '600px';
             modal.style.width = '100%';
+
+            const paramsHtml = parameters.length
+                ? `
+                    <h4>Parameters (runs with these defaults)</h4>
+                    ${parameters.map(buildParamPreviewHtml).join('')}
+                `
+                : '';
+
             modal.innerHTML = `
                 <h3>${escapeHtml(api.name)}</h3>
                 <p><strong>Endpoint:</strong> ${escapeHtml(api.endpoint)}</p>
                 <p><strong>Method:</strong> ${escapeHtml(api.method)}</p>
                 <p><strong>Version:</strong> ${escapeHtml(api.version || '')}</p>
                 <pre style="background:#f6f8fa;padding:8px;border-radius:4px;max-height:240px;overflow:auto">${escapeHtml(api.generatedCode || '')}</pre>
-                <div style="text-align:right;margin-top:8px">
+                ${paramsHtml}
+                <div class="run-result" style="margin-top:10px;font-size:13px;display:none"></div>
+                <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
+                    <button class="btn btn-primary modal-run-api">Run API</button>
                     <button class="btn btn-secondary modal-close">Close</button>
                 </div>
             `;
@@ -495,6 +589,43 @@ const popupApp = {
 
             overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
             overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+            const runBtn = overlay.querySelector('.modal-run-api');
+            const resultEl = overlay.querySelector('.run-result');
+
+            runBtn.addEventListener('click', async () => {
+                runBtn.disabled = true;
+                runBtn.textContent = 'Running…';
+                resultEl.style.display = 'none';
+                resultEl.className = 'run-result';
+
+                try {
+                    // No values sent — the backend fills every parameter from
+                    // its stored default (the value captured while recording).
+                    const response = await fetch(`http://localhost:5000${api.endpoint}`, {
+                        method: api.method || 'POST',
+                        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+                        body: JSON.stringify({})
+                    });
+                    const data = await response.json().catch(() => ({}));
+
+                    if (response.ok && data.success) {
+                        resultEl.classList.add('run-result--success');
+                        const suffix = data.finalUrl ? ` Ended at ${data.finalUrl}.` : '';
+                        resultEl.textContent = `✓ ${data.message || 'Run succeeded.'}${suffix}`;
+                    } else {
+                        resultEl.classList.add('run-result--error');
+                        resultEl.textContent = `✗ ${data.message || `Run failed (HTTP ${response.status}).`}`;
+                    }
+                } catch (err) {
+                    resultEl.classList.add('run-result--error');
+                    resultEl.textContent = `✗ Could not reach the backend: ${err.message}`;
+                } finally {
+                    resultEl.style.display = 'block';
+                    runBtn.disabled = false;
+                    runBtn.textContent = 'Run API';
+                }
+            });
         };
 
         const escapeHtml = (str) => {
@@ -759,6 +890,8 @@ const popupApp = {
             overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
         };
 
+        const defaultWorkflowName = () => `Workflow - ${new Date().toLocaleString()}`;
+
         const sendRuntimeMessage = (message) => new Promise((resolve) => {
             chrome.runtime.sendMessage(message, (response) => {
                 if (chrome.runtime.lastError) {
@@ -836,10 +969,20 @@ const popupApp = {
         };
 
         const handleStopRecording = async () => {
-            const response = await sendRuntimeMessage({ type: 'stop-recording', source: 'popup' });
+            const input = window.prompt('Name this workflow:', defaultWorkflowName());
+            const name = (input || '').trim() || defaultWorkflowName();
+
+            const response = await sendRuntimeMessage({ type: 'stop-recording', source: 'popup', save: true, name });
             if (response?.ok) {
                 await updateRecordingView();
             }
+
+            if (response?.save?.ok) {
+                alert('Saved! View in My APIs.');
+            } else if (response?.save) {
+                alert(`Could not save workflow: ${response.save.error || 'Unknown error'}`);
+            }
+
             showRecording();
         };
 
@@ -936,6 +1079,8 @@ const popupApp = {
             loginButton.textContent = isLoading ? 'Logging in...' : 'Login';
         };
 
+        const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
         const handleLogin = async () => {
             if (!loginButton) {
                 return;
@@ -949,29 +1094,39 @@ const popupApp = {
                 return;
             }
 
-            const payload = {
-                email: emailInput.value,
-                password: passwordInput.value
-            };
+            const email = emailInput.value.trim();
+            const password = passwordInput.value;
 
-            setLoginButtonState(true);
             clearLoginError();
 
+            // Client-side validation first — no network call for something
+            // the form can already tell is wrong.
+            if (!email || !password) {
+                updateLoginError('Email and password are required.');
+                return;
+            }
+            if (!EMAIL_PATTERN.test(email)) {
+                updateLoginError('Enter a valid email address.');
+                return;
+            }
+
+            setLoginButtonState(true);
+
             try {
-                const response = await fetch('http://localhost:5000/auth/login', {
+                const response = await fetch(`${AUTH_BASE_URL}/login`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({ email, password })
                 });
 
                 const data = await response.json().catch(() => ({}));
 
-                const isLoginSuccessful = response.ok;
-
-                if (isLoginSuccessful) {
+                if (response.ok && data.success && data.token) {
                     clearLoginError();
+                    await saveAuthSession(data.token, data.user);
+                    passwordInput.value = '';
                     handleFreeTrialNavigation();
                     return;
                 }
@@ -982,6 +1137,121 @@ const popupApp = {
                 updateLoginError('Unable to reach the ForgeFlow server. Please try again.');
             } finally {
                 setLoginButtonState(false);
+            }
+        };
+
+        const handleLogout = async () => {
+            const session = await getAuthSession();
+            if (session?.token) {
+                try {
+                    await fetch(`${AUTH_BASE_URL}/logout`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${session.token}` }
+                    });
+                } catch (error) {
+                    console.warn('[ForgeFlow][popup] logout request failed, clearing local session anyway', error);
+                }
+            }
+
+            await clearAuthSession();
+            signupView.hidden = true;
+            dashboardView.hidden = true;
+            loginView.hidden = false;
+        };
+
+        let signupErrorMessage = null;
+
+        const updateSignupError = (message) => {
+            if (!signupErrorMessage) {
+                signupErrorMessage = document.createElement('p');
+                signupErrorMessage.className = 'login-error';
+                signupErrorMessage.setAttribute('role', 'alert');
+                signupButton?.parentNode?.insertBefore(signupErrorMessage, signupButton.nextSibling);
+            }
+
+            signupErrorMessage.textContent = message;
+        };
+
+        const clearSignupError = () => {
+            if (signupErrorMessage) {
+                signupErrorMessage.textContent = '';
+            }
+        };
+
+        const setSignupButtonState = (isLoading) => {
+            if (!signupButton) {
+                return;
+            }
+
+            signupButton.disabled = isLoading;
+            signupButton.textContent = isLoading ? 'Signing up...' : 'Sign Up';
+        };
+
+        const handleSignup = async () => {
+            if (!signupButton) {
+                return;
+            }
+
+            const nameInput = document.getElementById('signup-name');
+            const emailInput = document.getElementById('signup-email');
+            const passwordInput = document.getElementById('signup-password');
+            const confirmPasswordInput = document.getElementById('signup-confirm-password');
+
+            if (!nameInput || !emailInput || !passwordInput || !confirmPasswordInput) {
+                updateSignupError('Unable to access sign up form.');
+                return;
+            }
+
+            const name = nameInput.value.trim();
+            const email = emailInput.value.trim();
+            const password = passwordInput.value;
+            const confirmPassword = confirmPasswordInput.value;
+
+            clearSignupError();
+
+            if (!name || !email || !password || !confirmPassword) {
+                updateSignupError('All fields are required.');
+                return;
+            }
+            if (!EMAIL_PATTERN.test(email)) {
+                updateSignupError('Enter a valid email address.');
+                return;
+            }
+            if (password.length < 8) {
+                updateSignupError('Password must be at least 8 characters.');
+                return;
+            }
+            if (password !== confirmPassword) {
+                updateSignupError('Passwords do not match.');
+                return;
+            }
+
+            setSignupButtonState(true);
+
+            try {
+                const response = await fetch(`${AUTH_BASE_URL}/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, email, password })
+                });
+
+                const data = await response.json().catch(() => ({}));
+
+                if (response.ok && data.success && data.token) {
+                    clearSignupError();
+                    await saveAuthSession(data.token, data.user);
+                    passwordInput.value = '';
+                    confirmPasswordInput.value = '';
+                    navigateToDashboard();
+                    return;
+                }
+
+                updateSignupError(data.message || 'Sign up failed. Please try again.');
+            } catch (error) {
+                console.error('Sign up request failed:', error);
+                updateSignupError('Unable to reach the ForgeFlow server. Please try again.');
+            } finally {
+                setSignupButtonState(false);
             }
         };
 
@@ -998,6 +1268,22 @@ const popupApp = {
 
         if (trialButton) {
             trialButton.addEventListener('click', handleFreeTrialNavigation);
+        }
+
+        if (showSignupButton) {
+            showSignupButton.addEventListener('click', showSignup);
+        }
+
+        if (showLoginButton) {
+            showLoginButton.addEventListener('click', showLogin);
+        }
+
+        if (signupButton) {
+            signupButton.addEventListener('click', handleSignup);
+        }
+
+        if (logoutButton) {
+            logoutButton.addEventListener('click', handleLogout);
         }
 
         if (startRecordingButton) {
@@ -1219,6 +1505,25 @@ const popupApp = {
         }
 
         // TODO: Add future marketplace backend integration, ownership verification, publishing, resale, and payment gateway hooks here.
+
+        // On popup open: if a stored session's token still verifies against
+        // the backend, skip straight to the dashboard; otherwise (missing,
+        // expired, or the backend rejects it) clear it and leave the login
+        // screen showing, which is already the default state of the page.
+        (async () => {
+            const session = await getAuthSession();
+            if (!session?.token) {
+                return;
+            }
+
+            const user = await verifyAuthSession(session.token);
+            if (user) {
+                await saveAuthSession(session.token, user);
+                navigateToDashboard();
+            } else {
+                await clearAuthSession();
+            }
+        })();
     }
 };
 

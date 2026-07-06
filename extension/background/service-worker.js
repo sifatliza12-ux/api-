@@ -106,6 +106,50 @@ const sendToTab = async (tabId, message) => {
     });
 };
 
+const BACKEND_BASE_URL = 'http://localhost:5000';
+const AUTH_STORAGE_KEY = 'forgeflow.auth';
+
+// Recording/API generation now requires an account (workflows are owned per
+// user), so the token the popup saved to chrome.storage.local needs to ride
+// along on this request — it's the same storage area the popup itself reads,
+// just accessed here since the service worker is what actually calls the
+// backend.
+const getAuthToken = async () => {
+    const result = await chrome.storage.local.get(AUTH_STORAGE_KEY);
+    return result?.[AUTH_STORAGE_KEY]?.token || null;
+};
+
+const saveWorkflowToBackend = async ({ name, description, events }) => {
+    if (!Array.isArray(events) || events.length === 0) {
+        return { ok: false, error: 'No events were recorded.' };
+    }
+
+    const token = await getAuthToken();
+    if (!token) {
+        return { ok: false, error: 'You must be logged in to save a workflow. Open the ForgeFlow popup and log in first.' };
+    }
+
+    try {
+        const response = await fetch(`${BACKEND_BASE_URL}/api/workflows/parameterize`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({ name, description, events })
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok || !data.success) {
+            return { ok: false, error: data.message || `Save failed (HTTP ${response.status})` };
+        }
+
+        return { ok: true, workflow: data };
+    } catch (error) {
+        return { ok: false, error: error.message || 'Could not reach the backend.' };
+    }
+};
+
 const syncTab = async (tabId, state) => {
     if (!tabId) {
         return { ok: false, error: 'No tab available' };
@@ -159,7 +203,7 @@ const startRecording = (tabId) => enqueueStateOp(async () => {
     return { ok: true, state: nextState };
 });
 
-const stopRecording = (tabId) => enqueueStateOp(async () => {
+const stopRecording = ({ tabId, save, name, description } = {}) => enqueueStateOp(async () => {
     const activeTab = await getActiveTab();
     const targetTabId = tabId || activeTab?.id || null;
     const currentState = await getSnapshot();
@@ -176,7 +220,13 @@ const stopRecording = (tabId) => enqueueStateOp(async () => {
         await syncTab(targetTabId, nextState);
     }
 
-    return { ok: true, state: nextState };
+    const result = { ok: true, state: nextState };
+
+    if (save) {
+        result.save = await saveWorkflowToBackend({ name, description, events: nextState.events });
+    }
+
+    return result;
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -197,7 +247,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
 
             if (request?.type === 'stop-recording') {
-                const result = await stopRecording(sender.tab?.id);
+                const result = await stopRecording({
+                    tabId: sender.tab?.id,
+                    save: Boolean(request.save),
+                    name: request.name,
+                    description: request.description
+                });
                 sendResponse(result);
                 return;
             }

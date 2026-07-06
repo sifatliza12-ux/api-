@@ -16,6 +16,10 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
+if (!process.env.JWT_SECRET) {
+  console.warn('[Backend] WARNING: JWT_SECRET is not set — auth token signing/verification will fail. Set it in .env.');
+}
+
 app.use(cors(corsOptions));
 // Default express.json() limit is 100kb — too small for a real recorded
 // workflow session (scroll/keydown/input events add up fast). Set generously
@@ -34,14 +38,13 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.use('/auth', authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/apis', apiRoutes);
 app.use('/marketplace', marketplaceRoutes);
 app.use('/subscription', subscriptionRoutes);
 app.use('/api', myApisRoutes);
 app.use('/api/workflows', workflowRoutes);
 
-// TODO: Add authentication middleware, JWT verification, and route guards here.
 // TODO: Add marketplace transactions and payment gateway hooks here.
 // TODO: Add MongoDB integration and persistence layer later.
 
