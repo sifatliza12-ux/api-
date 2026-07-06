@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "API Builder",
+  "version": "1.0.0",
+  "description": "A Chrome extension for building APIs",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_title": "API Builder",
+    "default_popup": "popup/popup.html"
+  },
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content/content.js"
+      ]
+    }
+  ]
+}

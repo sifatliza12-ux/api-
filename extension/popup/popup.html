@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ForgeFlow</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <main class="popup-shell">
+        <div class="ambient ambient-one"></div>
+        <div class="ambient ambient-two"></div>
+
+        <!-- LOGIN SCREEN -->
+        <section class="view login-view" id="login-view" aria-label="ForgeFlow login view">
+            <section class="hero" aria-label="ForgeFlow intro">
+                <div class="brand-mark" aria-hidden="true">FF</div>
+                <div class="hero-copy">
+                    <p class="eyebrow">AI-powered workflow platform</p>
+                    <h1>ForgeFlow</h1>
+                    <p class="subtitle">Turn workflows into reusable APIs.</p>
+                </div>
+            </section>
+
+            <form class="login-form" novalidate>
+                <label class="field">
+                    <span>Email</span>
+                    <input type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email">
+                </label>
+
+                <label class="field">
+                    <span>Password</span>
+                    <input type="password" id="password" name="password" placeholder="Enter your password" autocomplete="current-password">
+                </label>
+
+                <button type="button" id="login-btn" class="btn btn-primary">Login</button>
+                <button type="button" id="trial-btn" class="btn btn-secondary">Continue with Free Trial</button>
+            </form>
+
+            <p class="footer">Version 1.0.0</p>
+        </section>
+
+        <!-- DASHBOARD SCREEN -->
+        <section class="view dashboard-view" id="dashboard-view" hidden aria-label="ForgeFlow dashboard view">
+            <header class="dashboard-header dashboard-header--compact">
+                <div class="brand-group">
+                    <div class="brand-mark brand-mark-sm" aria-hidden="true">FF</div>
+                    <div class="brand-copy">
+                        <p class="eyebrow eyebrow-small">Workflow intelligence</p>
+                        <h2>ForgeFlow</h2>
+                    </div>
+                </div>
+                <div class="avatar-badge" aria-label="User avatar">U</div>
+            </header>
+
+            <div class="welcome-row welcome-row--compact">
+                <p class="welcome-text">Welcome back!</p>
+            </div>
+
+            <section class="hero-card hero-card--compact" aria-label="Main action card">
+                <div class="hero-card-copy">
+                    <h3>Start Recording</h3>
+                    <p>Record your workflow and let ForgeFlow generate a reusable API.</p>
+                </div>
+                <button type="button" id="start-recording-btn" class="record-btn" aria-label="Open workflow recording screen">Start Recording</button>
+            </section>
+
+            <section class="stats-grid" aria-label="Quick statistics">
+                <article class="stat-card">
+                    <span class="stat-label">APIs Created</span>
+                    <strong>0</strong>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">Free Trial Remaining</span>
+                    <strong>5</strong>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">Subscription</span>
+                    <strong>Free</strong>
+                </article>
+            </section>
+
+            <section class="feature-grid" aria-label="Dashboard features">
+                <article class="feature-card feature-card--my-apis" id="my-apis-card" tabindex="0" role="button" aria-label="Open My APIs screen">
+                    <span class="feature-icon">✦</span>
+                    <h4>My APIs</h4>
+                </article>
+                <article class="feature-card feature-card--marketplace" id="marketplace-card" tabindex="0" role="button" aria-label="Open marketplace">
+                    <span class="feature-icon">◫</span>
+                    <h4>Marketplace</h4>
+                </article>
+                <article class="feature-card" id="subscription-card">
+                    <span class="feature-icon">◎</span>
+                    <h4>Subscription</h4>
+                </article>
+                <article class="feature-card" id="settings-card">
+                    <span class="feature-icon">⚙</span>
+                    <h4>Settings</h4>
+                </article>
+            </section>
+
+            <section class="activity-card" aria-label="Recent activity">
+                <div class="activity-title-row">
+                    <h3>Recent Activity</h3>
+                    <span class="activity-pill">Live</span>
+                </div>
+                <div class="empty-state">No APIs generated yet.</div>
+            </section>
+
+            <nav class="bottom-nav" aria-label="Bottom navigation">
+                <button type="button" id="nav-home" class="nav-item active" aria-label="Open home view">Home</button>
+                <button type="button" id="nav-apis" class="nav-item" aria-label="View APIs">APIs</button>
+                <button type="button" id="nav-marketplace" class="nav-item" aria-label="View marketplace">Marketplace</button>
+                <button type="button" id="nav-profile" class="nav-item" aria-label="Open profile">Profile</button>
+            </nav>
+        </section>
+
+        <!-- RECORDING SCREEN -->
+        <section class="view recording-view" id="recording-view" hidden aria-label="Workflow recording view">
+            <header class="screen-header">
+                <button type="button" id="back-to-dashboard-btn" class="icon-btn" aria-label="Return to dashboard">←</button>
+                <h2>Workflow Recorder</h2>
+                <div class="header-spacer" aria-hidden="true"></div>
+            </header>
+
+            <section class="recording-card" aria-label="Recording status">
+                <div class="status-row">
+                    <div class="recording-indicator" aria-hidden="true"></div>
+                    <div>
+                        <p class="status-label">Status</p>
+                        <p class="status-value">Ready to Record</p>
+                    </div>
+                </div>
+
+                <div class="instructions-card">
+                    <h3>How it works</h3>
+                    <ul class="instruction-list">
+                        <li>Open the website you want to automate.</li>
+                        <li>Perform your workflow naturally.</li>
+                        <li>ForgeFlow will analyze your actions.</li>
+                        <li>A reusable API will be generated afterwards.</li>
+                    </ul>
+                </div>
+            </section>
+
+            <section class="controls-card" aria-label="Recording controls">
+                <div class="control-row">
+                    <button type="button" id="record-start-btn" class="btn btn-primary control-btn" aria-label="Start workflow recording">Start Recording</button>
+                    <button type="button" id="record-pause-btn" class="btn btn-secondary control-btn" disabled aria-label="Pause workflow recording">Pause Recording</button>
+                    <button type="button" id="record-stop-btn" class="btn btn-secondary control-btn" disabled aria-label="Stop workflow recording">Stop Recording</button>
+                    <button type="button" id="record-cancel-btn" class="btn btn-secondary control-btn" aria-label="Cancel workflow recording">Cancel</button>
+                </div>
+            </section>
+
+            <section class="metrics-card" aria-label="Recording progress">
+                <div class="metric-grid">
+                    <article class="metric-item">
+                        <span class="metric-label">Steps Recorded</span>
+                        <strong>0</strong>
+                    </article>
+                    <article class="metric-item">
+                        <span class="metric-label">Duration</span>
+                        <strong>00:00</strong>
+                    </article>
+                </div>
+
+                <div class="activity-log">
+                    <h3>Activity Log</h3>
+                    <p>No activity yet.</p>
+                </div>
+            </section>
+
+            <p class="footer-note">Recording stays active while you move between pages.</p>
+        </section>
+
+        <!-- GENERATING API SCREEN -->
+        <section class="view generation-view" id="generation-view" hidden aria-label="API generation view">
+            <div class="generation-content" aria-live="polite">
+                <div class="loading-ring" aria-hidden="true">
+                    <span class="loading-dot"></span>
+                </div>
+                <h2>Generating Your API...</h2>
+                <p>ForgeFlow is analyzing your recorded workflow.</p>
+            </div>
+        </section>
+
+        <!-- API GENERATED SCREEN -->
+        <section class="view generated-view" id="generated-view" hidden aria-label="Generated API view">
+            <div class="success-badge" aria-hidden="true">✓</div>
+            <h2>API Generated Successfully</h2>
+
+            <div class="meta-grid">
+                <article class="meta-card">
+                    <span class="meta-label">API Name</span>
+                    <strong>User Workflow API</strong>
+                </article>
+                <article class="meta-card">
+                    <span class="meta-label">Method</span>
+                    <strong>POST</strong>
+                </article>
+                <article class="meta-card">
+                    <span class="meta-label">Endpoint</span>
+                    <strong>/api/v1/workflow</strong>
+                </article>
+                <article class="meta-card">
+                    <span class="meta-label">Version</span>
+                    <strong>v1.0</strong>
+                </article>
+            </div>
+
+            <section class="code-card" aria-label="Generated API preview">
+                <div class="code-header">
+                    <span>Generated API</span>
+                    <span class="code-pill">Read-only</span>
+                </div>
+                <pre><code>POST /api/v1/workflow
+{
+  "success": true,
+  "message": "Workflow executed successfully."
+}</code></pre>
+            </section>
+
+            <div class="action-grid">
+                <button type="button" id="copy-endpoint-btn" class="btn btn-secondary action-btn" aria-label="Copy generated endpoint">Copy Endpoint</button>
+                <button type="button" id="download-api-btn" class="btn btn-secondary action-btn" aria-label="Download generated API">Download API</button>
+                <button type="button" id="publish-marketplace-btn" class="btn btn-secondary action-btn" aria-label="Publish API to marketplace">Publish to Marketplace</button>
+                <button type="button" id="back-to-dashboard-generated-btn" class="btn btn-primary action-btn" aria-label="Return to dashboard">Back to Dashboard</button>
+            </div>
+        </section>
+
+        <!-- MY APIs SCREEN -->
+        <section class="view my-apis-view" id="my-apis-view" hidden aria-label="My APIs view">
+            <header class="screen-header my-apis-header">
+                <button type="button" id="back-to-dashboard-from-my-apis-btn" class="icon-btn" aria-label="Return to dashboard">←</button>
+                <div class="my-apis-title-group">
+                    <h2>My APIs</h2>
+                    <p>Manage your generated APIs.</p>
+                </div>
+                <div class="header-spacer" aria-hidden="true"></div>
+            </header>
+
+            <label class="search-field" for="my-apis-search">
+                <span class="search-icon" aria-hidden="true">⌕</span>
+                <input type="text" id="my-apis-search" placeholder="Search your APIs..." aria-label="Search your APIs">
+            </label>
+
+            <section class="stats-grid stats-grid--compact" aria-label="API statistics">
+                <article class="stat-card stat-card--compact">
+                    <span class="stat-label">Total APIs</span>
+                    <strong>3</strong>
+                </article>
+                <article class="stat-card stat-card--compact">
+                    <span class="stat-label">Published</span>
+                    <strong>1</strong>
+                </article>
+                <article class="stat-card stat-card--compact">
+                    <span class="stat-label">Drafts</span>
+                    <strong>1</strong>
+                </article>
+            </section>
+
+            <section class="my-apis-section" aria-label="Your API collection">
+                <!-- TODO: Load generated APIs from backend here. -->
+                <article class="api-card">
+                    <div class="api-card-top">
+                        <div>
+                            <h3>User Workflow API</h3>
+                            <p class="api-meta-line">POST • v1.0 • Created Today</p>
+                        </div>
+                        <span class="status-badge status-badge--active">Active</span>
+                    </div>
+                    <div class="api-details">
+                        <span>Endpoint: /api/v1/workflow</span>
+                        <span>Last Updated: 2h ago</span>
+                    </div>
+                    <div class="api-actions">
+                        <button type="button" class="btn btn-secondary api-action-btn" aria-label="View API details">View API</button>
+                        <button type="button" class="btn btn-secondary api-action-btn copy-endpoint-btn" data-original-text="Copy Endpoint" aria-label="Copy endpoint">Copy Endpoint</button>
+                        <button type="button" class="btn btn-secondary api-action-btn" aria-label="Publish API to marketplace">Publish to Marketplace</button>
+                        <button type="button" class="btn btn-danger api-action-btn" aria-label="Delete API">Delete</button>
+                    </div>
+                    <!-- TODO: Add API editing and version management workflows here. -->
+                </article>
+
+                <article class="api-card">
+                    <div class="api-card-top">
+                        <div>
+                            <h3>Invoice Generator API</h3>
+                            <p class="api-meta-line">GET • v1.2 • Created Yesterday</p>
+                        </div>
+                        <span class="status-badge status-badge--draft">Draft</span>
+                    </div>
+                    <div class="api-details">
+                        <span>Endpoint: /api/v1/invoices</span>
+                        <span>Last Updated: 1d ago</span>
+                    </div>
+                    <div class="api-actions">
+                        <button type="button" class="btn btn-secondary api-action-btn" aria-label="View API details">View API</button>
+                        <button type="button" class="btn btn-secondary api-action-btn copy-endpoint-btn" data-original-text="Copy Endpoint" aria-label="Copy endpoint">Copy Endpoint</button>
+                        <button type="button" class="btn btn-secondary api-action-btn" aria-label="Publish API to marketplace">Publish to Marketplace</button>
+                        <button type="button" class="btn btn-danger api-action-btn" aria-label="Delete API">Delete</button>
+                    </div>
+                    <!-- TODO: Add publishing workflow and endpoint generation here. -->
+                </article>
+
+                <article class="api-card">
+                    <div class="api-card-top">
+                        <div>
+                            <h3>Student Records API</h3>
+                            <p class="api-meta-line">POST • v2.0 • Created 3 days ago</p>
+                        </div>
+                        <span class="status-badge status-badge--published">Published</span>
+                    </div>
+                    <div class="api-details">
+                        <span>Endpoint: /api/v1/students</span>
+                        <span>Last Updated: 3d ago</span>
+                    </div>
+                    <div class="api-actions">
+                        <button type="button" class="btn btn-secondary api-action-btn" aria-label="View API details">View API</button>
+                        <button type="button" class="btn btn-secondary api-action-btn copy-endpoint-btn" data-original-text="Copy Endpoint" aria-label="Copy endpoint">Copy Endpoint</button>
+                        <button type="button" class="btn btn-secondary api-action-btn" aria-label="Publish API to marketplace">Publish to Marketplace</button>
+                        <button type="button" class="btn btn-danger api-action-btn" aria-label="Delete API">Delete</button>
+                    </div>
+                    <!-- TODO: Connect API version management to backend later. -->
+                </article>
+            </section>
+
+            <p class="footer-note">My APIs will support real CRUD actions and endpoint generation in a future milestone.</p>
+        </section>
+
+        <!-- SUBSCRIPTION PLACEHOLDER -->
+        <section class="view subscription-view" id="subscription-view" hidden aria-label="Subscription view">
+            <header class="screen-header">
+                <button type="button" id="back-to-dashboard-from-subscription-btn" class="icon-btn" aria-label="Return to dashboard">←</button>
+                <h2>Subscription</h2>
+                <div class="header-spacer" aria-hidden="true"></div>
+            </header>
+            <section class="placeholder-card">
+                <h3>Subscription Management</h3>
+                <p>Manage your plan, billing, and team access here. (Placeholder)</p>
+            </section>
+        </section>
+
+        <!-- SETTINGS PLACEHOLDER -->
+        <section class="view settings-view" id="settings-view" hidden aria-label="Settings view">
+            <header class="screen-header">
+                <button type="button" id="back-to-dashboard-from-settings-btn" class="icon-btn" aria-label="Return to dashboard">←</button>
+                <h2>Settings</h2>
+                <div class="header-spacer" aria-hidden="true"></div>
+            </header>
+            <section class="placeholder-card">
+                <h3>Settings</h3>
+                <p>Application preferences and integrations. (Placeholder)</p>
+            </section>
+        </section>
+
+        <!-- PROFILE PLACEHOLDER -->
+        <section class="view profile-view" id="profile-view" hidden aria-label="Profile view">
+            <header class="screen-header">
+                <button type="button" id="back-to-dashboard-from-profile-btn" class="icon-btn" aria-label="Return to dashboard">←</button>
+                <h2>Profile</h2>
+                <div class="header-spacer" aria-hidden="true"></div>
+            </header>
+            <section class="placeholder-card">
+                <h3>Your Profile</h3>
+                <p>View and edit your user profile. (Placeholder)</p>
+            </section>
+        </section>
+
+        <!-- MARKETPLACE SCREEN -->
+        <section class="view marketplace-view" id="marketplace-view" hidden aria-label="Marketplace view">
+            <header class="screen-header marketplace-header">
+                <button type="button" id="back-to-dashboard-from-marketplace-btn" class="icon-btn" aria-label="Return to dashboard">←</button>
+                <div class="marketplace-title-group">
+                    <h2>Marketplace</h2>
+                    <p>Discover reusable APIs built by the ForgeFlow community.</p>
+                </div>
+                <div class="header-spacer" aria-hidden="true"></div>
+            </header>
+
+            <label class="search-field" for="marketplace-search">
+                <span class="search-icon" aria-hidden="true">⌕</span>
+                <input type="text" id="marketplace-search" placeholder="Search APIs..." aria-label="Search marketplace APIs">
+            </label>
+            <div class="chip-row" aria-label="Marketplace categories">
+                <button type="button" class="chip active" data-category="all">All</button>
+                <button type="button" class="chip" data-category="productivity">Productivity</button>
+                <button type="button" class="chip" data-category="automation">Automation</button>
+                <button type="button" class="chip" data-category="ecommerce">E-commerce</button>
+                <button type="button" class="chip" data-category="social">Social Media</button>
+            </div>
+
+            <div class="market-controls" style="display:flex;gap:8px;align-items:center;margin:12px 0">
+                <label style="display:flex;align-items:center;gap:6px">
+                    <span>Filter</span>
+                    <select id="marketplace-filter">
+                        <option value="all">All</option>
+                        <option value="free">Free</option>
+                        <option value="paid">Paid</option>
+                    </select>
+                </label>
+                <label style="display:flex;align-items:center;gap:6px">
+                    <span>Sort</span>
+                    <select id="marketplace-sort">
+                        <option value="newest">Newest</option>
+                        <option value="price-asc">Price: Low → High</option>
+                        <option value="price-desc">Price: High → Low</option>
+                    </select>
+                </label>
+            </div>
+
+            <section class="marketplace-section" aria-label="Featured APIs">
+                <h3>Featured APIs</h3>
+                <div id="marketplace-list"></div>
+            </section>
+
+            <section class="marketplace-section" aria-label="Your published APIs">
+                <h3>My Published APIs</h3>
+                <article class="market-card market-card--listing">
+                    <div class="market-card-top">
+                        <div>
+                            <h4>Student Record API</h4>
+                            <p>Original purchase price: $10 • Selling price: $15</p>
+                        </div>
+                        <span class="listing-badge">Listed for Sale</span>
+                    </div>
+                    <div class="market-meta">
+                        <span>Status: Listed</span>
+                        <span>Owner: You</span>
+                    </div>
+                    <div class="listing-actions">
+                        <button type="button" id="edit-price-btn" class="btn btn-secondary action-btn" aria-label="Edit listing price">Edit Price</button>
+                        <button type="button" id="remove-listing-btn" class="btn btn-secondary action-btn" aria-label="Remove listing">Remove Listing</button>
+                    </div>
+                    <p class="listing-note">Users can list their generated APIs for sale or adjust their selling price.</p>
+                </article>
+            </section>
+
+            <p class="footer-note">Marketplace purchases and publishing will be available in a future milestone.</p>
+        </section>
+    </main>
+
+    <script src="popup.js"></script>
+</body>
+</html>
