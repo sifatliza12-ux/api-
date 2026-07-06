@@ -215,7 +215,7 @@ const extractAriaLabelFromSelector = (selector) => {
   return match ? match[1] : null;
 };
 
-const classifyDynamicClick = (event) => {
+const classifyDynamicClick = (event, context = {}) => {
   if (event.type !== 'click' && event.type !== 'dblclick') {
     return null;
   }
@@ -252,7 +252,26 @@ const classifyDynamicClick = (event) => {
     };
   }
 
-  if (meta.inListboxContext && text) {
+  // Autocomplete/suggestion selection — the "type Dhaka, later run with
+  // London" case. This is deliberately NOT a new independent parameter:
+  // an autocomplete option only exists *because of* whatever was just typed
+  // into the field right before it, so it should track that field's live
+  // value automatically, not need to be kept in sync as a second parameter.
+  // meta.inListboxContext (role=listbox/option, or a suggestion/dropdown
+  // class — see content.js's getClickContext) is the strong, live-recording
+  // signal; context.relatedParamName is the adjacency fallback for legacy
+  // workflows that predate that capture — "this click came immediately
+  // after typing into a field" is, on essentially every real site, exactly
+  // what selecting a search/destination/movie/stock-symbol suggestion looks
+  // like, regardless of what that site's dropdown markup happens to be.
+  if ((meta.inListboxContext || context.relatedParamName) && text) {
+    if (context.relatedParamName) {
+      return {
+        kind: 'dynamic_click',
+        linkedParam: context.relatedParamName,
+        description: `A suggestion selected during recording (originally "${text}") for the value typed into "${context.relatedParamName}". Replay searches the live suggestion list for an option matching whatever value that parameter is given, instead of the exact original suggestion.`
+      };
+    }
     return {
       kind: 'dynamic_click',
       paramType: 'text',
@@ -277,10 +296,19 @@ const NAME_PREFIX_BY_KIND = {
 // upgrading legacy workflows saved before this feature existed) — one place
 // that turns a classified dynamic click into an actual parameter + rewritten
 // step, so both paths can never drift apart on naming/typing rules.
-const buildDynamicClickUpgrade = (event, dynamicCountByPrefix, usedNames) => {
-  const dynamicClick = classifyDynamicClick(event);
+const buildDynamicClickUpgrade = (event, dynamicCountByPrefix, usedNames, context = {}) => {
+  const dynamicClick = classifyDynamicClick(event, context);
   if (!dynamicClick) {
     return null;
+  }
+
+  // Linked suggestion click — no new parameter. Reuses the related field's
+  // own placeholder directly, so overriding just that one parameter (e.g.
+  // "destination") is enough; there's no second "which suggestion to click"
+  // parameter for a caller to separately keep in sync.
+  if (dynamicClick.linkedParam) {
+    const step = { ...event, type: dynamicClick.kind, value: `{{${dynamicClick.linkedParam}}}` };
+    return { parameter: null, step };
   }
 
   const textClassification = classifyValueText(typeof event.value === 'string' ? event.value.trim() : '');
@@ -312,6 +340,17 @@ const parameterizeWorkflowRuleBased = (events) => {
   const usedNames = new Set();
   let variableCount = 0;
   const dynamicCountByPrefix = {};
+
+  // Tracks "the parameter a caller would naturally think to override" for
+  // linking an immediately-following suggestion click — see
+  // classifyDynamicClick's linkedParam branch. Kept anchored to the FIRST
+  // parameter created for a given selector so a field's paired input+change
+  // events (recorded as two separate parameters, e.g. "destination" and
+  // "destination2") don't shift the link target to the second, less
+  // obvious one. Cleared after any click (the "about to pick a suggestion"
+  // window closes once anything is clicked) or navigation.
+  let pendingInputParamName = null;
+  let pendingInputSelector = null;
 
   const steps = condensed.map((event) => {
     if (event.type === 'input' || event.type === 'change') {
@@ -346,14 +385,32 @@ const parameterizeWorkflowRuleBased = (events) => {
         eventIndex: event.index
       });
 
+      if (event.selector !== pendingInputSelector) {
+        pendingInputParamName = uniqueName;
+        pendingInputSelector = event.selector;
+      }
+
       return { ...event, value: `{{${uniqueName}}}` };
     }
 
-    const upgrade = buildDynamicClickUpgrade(event, dynamicCountByPrefix, usedNames);
-    if (upgrade) {
-      usedNames.add(upgrade.parameter.name);
-      parameters.push(upgrade.parameter);
-      return upgrade.step;
+    if (event.type === 'click' || event.type === 'dblclick') {
+      const upgrade = buildDynamicClickUpgrade(event, dynamicCountByPrefix, usedNames, { relatedParamName: pendingInputParamName });
+      pendingInputParamName = null;
+      pendingInputSelector = null;
+
+      if (upgrade) {
+        if (upgrade.parameter) {
+          usedNames.add(upgrade.parameter.name);
+          parameters.push(upgrade.parameter);
+        }
+        return upgrade.step;
+      }
+      return { ...event };
+    }
+
+    if (event.type === 'navigation' || event.type === 'new_page') {
+      pendingInputParamName = null;
+      pendingInputSelector = null;
     }
 
     return { ...event };

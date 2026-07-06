@@ -17,6 +17,7 @@
 const { buildDynamicClickUpgrade } = require('./ruleBasedParameterizer');
 
 const PLACEHOLDER_PATTERN = /^\{\{.+\}\}$/;
+const PLACEHOLDER_CAPTURE_PATTERN = /^\{\{(.+)\}\}$/;
 
 const escapeForCssAttr = (value) => String(value).replace(/["\\]/g, '\\$&');
 
@@ -72,12 +73,28 @@ const upgradeLegacyWorkflow = ({ steps, parameters }) => {
   const nextParameters = [...(parameters || [])];
   let changed = false;
 
+  // Same adjacency tracking as the live parameterizer (see
+  // ruleBasedParameterizer.js's pendingInputParamName) — a legacy step's
+  // input/change value is already a placeholder ("{{destination}}") from
+  // whenever it was ORIGINALLY parameterized, so the name is extracted from
+  // that rather than re-derived, but the "was this click typed right
+  // before it" adjacency judgment is identical.
+  let pendingInputParamName = null;
+  let pendingInputSelector = null;
+
   const nextSteps = (steps || []).map((step) => {
     // Already semantic (recorded fresh, or upgraded on a previous load) —
     // never re-classify. Re-running classification on an already-upgraded
     // step could relabel it, which breaks the "stable schema across runs"
-    // guarantee the rest of the system relies on.
+    // guarantee the rest of the system relies on. It still originated from
+    // a click though, so the pending adjacency slot must be cleared here
+    // too — otherwise, on every load *after* the first upgrade, this early
+    // return skips the reset that a freshly-classified click would have
+    // done, and a stale link from an earlier field leaks into the next
+    // unrelated click.
     if (step.type === 'calendar_date' || step.type === 'dynamic_click') {
+      pendingInputParamName = null;
+      pendingInputSelector = null;
       return step;
     }
 
@@ -88,17 +105,37 @@ const upgradeLegacyWorkflow = ({ steps, parameters }) => {
       changed = true;
     }
 
+    if (workingStep.type === 'input' || workingStep.type === 'change') {
+      const match = typeof workingStep.value === 'string' ? workingStep.value.match(PLACEHOLDER_CAPTURE_PATTERN) : null;
+      if (match && workingStep.selector !== pendingInputSelector) {
+        pendingInputParamName = match[1];
+        pendingInputSelector = workingStep.selector;
+      }
+      return workingStep;
+    }
+
+    if (workingStep.type === 'navigation' || workingStep.type === 'new_page') {
+      pendingInputParamName = null;
+      pendingInputSelector = null;
+      return workingStep;
+    }
+
     if (workingStep.type !== 'click' && workingStep.type !== 'dblclick') {
       return workingStep;
     }
 
-    const upgrade = buildDynamicClickUpgrade(workingStep, dynamicCountByPrefix, usedNames);
+    const upgrade = buildDynamicClickUpgrade(workingStep, dynamicCountByPrefix, usedNames, { relatedParamName: pendingInputParamName });
+    pendingInputParamName = null;
+    pendingInputSelector = null;
+
     if (!upgrade) {
       return workingStep;
     }
 
-    usedNames.add(upgrade.parameter.name);
-    nextParameters.push(upgrade.parameter);
+    if (upgrade.parameter) {
+      usedNames.add(upgrade.parameter.name);
+      nextParameters.push(upgrade.parameter);
+    }
     changed = true;
     return upgrade.step;
   });

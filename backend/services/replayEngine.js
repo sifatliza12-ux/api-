@@ -143,6 +143,11 @@ const locatorFromCandidate = (page, candidate) => {
         : page.getByText(candidate.value, { exact: false });
     case 'label':
       return page.getByLabel(candidate.value, { exact: false });
+    case 'xpath':
+      // content.js's getXPath() already returns a bare "//..." or "/..."
+      // expression; Playwright needs the explicit xpath= engine prefix to
+      // parse it as one rather than trying to read it as CSS.
+      return page.locator(`xpath=${candidate.value}`);
     case 'css':
     default:
       return page.locator(candidate.value);
@@ -155,28 +160,37 @@ const locatorFromCandidate = (page, candidate) => {
 // with the legacy selector appended as a final fallback, so a stale/removed
 // semantic attribute never makes a step less resilient than it used to be.
 //
-// dynamic_click steps get one more candidate prepended, ahead of everything
-// recorded: a fresh text search for whatever the CURRENT parameter value is
-// — not the literal text that happened to be on the page months ago. This
-// is what makes "click the search result/price bucket/time slot matching
+// dynamic_click steps search for whatever the CURRENT parameter value is —
+// not the literal text that happened to be on the page months ago. This is
+// what makes "click the search result/suggestion/price bucket matching
 // {{value}}" actually parameter-aware instead of frozen to the recording.
-// If the parameter is missing (shouldn't happen — every dynamic_click step
-// always has a value) this silently falls through to the recorded
-// candidates instead of throwing, since those are still worth trying.
+//
+// When a live value is available it is deliberately the ONLY candidate,
+// not just the first one tried alongside the old recorded selector/text.
+// Both get walked in the SAME actionability sweep (findActionableCandidate
+// below), so if the old structural selector happens to already match
+// *something* on the page (a generic "first item in this dropdown" class
+// does, regardless of its content) while the freshly-typed value's
+// suggestion is still one network round-trip away from rendering, the old
+// candidate would win the race and click the wrong option — exactly the
+// "recorded Dhaka, still selects Dhaka after asking for London" failure
+// mode. waitForActionableElement's own retry/backoff loop already re-walks
+// this same fresh search every round, so there's nothing to gain — and a
+// wrong-element risk to lose — by giving the stale candidates a chance to
+// win early. They're only used when there's truly no live value to look for.
 const getCandidateList = (step, parameterValues) => {
-  const candidates = [];
-
   if (step.type === 'dynamic_click' && step.value) {
     try {
       const currentValue = substitutePlaceholders(step.value, parameterValues || {});
       if (currentValue !== null && typeof currentValue !== 'undefined' && String(currentValue).trim()) {
-        candidates.push({ strategy: 'text', value: String(currentValue).trim() });
+        return [{ strategy: 'text', value: String(currentValue).trim() }];
       }
     } catch (error) {
       // Missing parameter value — fall through to whatever was recorded.
     }
   }
 
+  const candidates = [];
   if (Array.isArray(step.locators)) {
     candidates.push(...step.locators);
   }
