@@ -936,10 +936,16 @@ pre {
     font-size: 13px;
 }
 
-.param-preview {
+.param-field-hint {
+    font-size: 12px;
+    color: #4b3b63;
+    margin-bottom: 8px;
+}
+
+.param-field {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 4px;
     padding: 8px 10px;
     margin-bottom: 6px;
     border-radius: 4px;
@@ -947,30 +953,37 @@ pre {
     background: rgba(31, 19, 48, 0.03);
 }
 
-.param-preview-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+.param-field-label {
     font-size: 13px;
     font-weight: 600;
+    color: #1f1330;
 }
 
-.param-preview-type {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    color: #6b5b83;
-}
-
-.param-preview-description {
+.param-field-description {
     font-size: 12px;
     color: #4b3b63;
 }
 
-.param-preview-default {
-    font-size: 12px;
+.param-field-input {
+    padding: 6px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(31, 19, 48, 0.22);
+    background: #fff;
     color: #1f1330;
+    font-size: 13px;
+    font-family: inherit;
+}
+
+.param-field-input:focus {
+    outline: none;
+    border-color: #8b5cf6;
+}
+
+.param-field-checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
 }
 
 .run-result {

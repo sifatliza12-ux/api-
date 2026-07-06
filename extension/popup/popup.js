@@ -524,22 +524,61 @@ const popupApp = {
             }
         };
 
-        // The creator's own Run API click never asks for input — it always
-        // runs with the stored default/example values (the ones captured
-        // while recording). This just shows what those defaults are, for
-        // transparency, without requiring any interaction. A marketplace
-        // buyer overriding specific values happens through the API directly
-        // (POST body), not through this popup — see workflowController.run.
-        const buildParamPreviewHtml = (param) => `
-            <div class="param-preview">
-                <div class="param-preview-top">
-                    <span class="param-preview-label">${escapeHtml(param.label)}</span>
-                    <span class="param-preview-type">${escapeHtml(param.type)}</span>
+        // One editable field per extracted parameter, pre-filled with the
+        // value captured while recording — this is what lets the owner's
+        // own Run API click use different values than the recording
+        // without needing to know the raw POST body shape. Every field
+        // carries data-param-name/data-param-type so collectParameterValues
+        // can read them back into the right JS type generically, for
+        // whatever parameters THIS workflow happens to have — no
+        // per-workflow or per-site-specific field handling.
+        const buildParamFieldHtml = (param) => {
+            const inputId = `param-input-${param.name}`;
+            const safeName = escapeHtml(param.name);
+
+            if (param.type === 'boolean') {
+                const checked = param.defaultValue ? 'checked' : '';
+                return `
+                    <div class="param-field">
+                        <label class="param-field-checkbox-row" for="${inputId}">
+                            <input type="checkbox" id="${inputId}" data-param-name="${safeName}" data-param-type="boolean" ${checked}>
+                            <span class="param-field-label">${escapeHtml(param.label)}</span>
+                        </label>
+                        ${param.description ? `<p class="param-field-description">${escapeHtml(param.description)}</p>` : ''}
+                    </div>
+                `;
+            }
+
+            const inputType = param.type === 'number' ? 'number' : (param.type === 'date' ? 'date' : 'text');
+            const value = escapeHtml(String(param.defaultValue ?? ''));
+
+            return `
+                <div class="param-field">
+                    <label class="param-field-label" for="${inputId}">${escapeHtml(param.label)}</label>
+                    <input type="${inputType}" id="${inputId}" class="param-field-input" data-param-name="${safeName}" data-param-type="${param.type || 'text'}" value="${value}">
+                    ${param.description ? `<p class="param-field-description">${escapeHtml(param.description)}</p>` : ''}
                 </div>
-                ${param.description ? `<p class="param-preview-description">${escapeHtml(param.description)}</p>` : ''}
-                <p class="param-preview-default"><strong>Default:</strong> ${escapeHtml(String(param.defaultValue ?? ''))}</p>
-            </div>
-        `;
+            `;
+        };
+
+        // Reads the current (possibly edited) value out of each rendered
+        // field, converting back to the JS type the backend expects —
+        // generic across whatever parameter set a given workflow has.
+        const collectParameterValues = (modal) => {
+            const values = {};
+            modal.querySelectorAll('[data-param-name]').forEach((input) => {
+                const name = input.dataset.paramName;
+                const type = input.dataset.paramType;
+                if (type === 'boolean') {
+                    values[name] = input.checked;
+                } else if (type === 'number') {
+                    values[name] = input.value === '' ? null : Number(input.value);
+                } else {
+                    values[name] = input.value;
+                }
+            });
+            return values;
+        };
 
         // "hotel_name" / "hotelName" -> "Hotel Name" — keys are whatever the
         // backend's extraction pipeline settled on (see
@@ -625,8 +664,9 @@ const popupApp = {
 
             const paramsHtml = parameters.length
                 ? `
-                    <h4>Parameters (runs with these defaults)</h4>
-                    ${parameters.map(buildParamPreviewHtml).join('')}
+                    <h4>Parameters</h4>
+                    <p class="param-field-hint">Pre-filled with the values captured while recording — edit any of them before running.</p>
+                    ${parameters.map(buildParamFieldHtml).join('')}
                 `
                 : '';
 
@@ -663,12 +703,16 @@ const popupApp = {
                 resultEl.innerHTML = '';
 
                 try {
-                    // No values sent — the backend fills every parameter from
-                    // its stored default (the value captured while recording).
+                    // Whatever is currently in the fields — pre-filled with
+                    // recorded defaults, but the user may have edited any of
+                    // them. The backend falls back to its own stored default
+                    // for any parameter not present in the body, so this is
+                    // safe to send even for a workflow with no parameters.
+                    const body = collectParameterValues(modal);
                     const response = await fetch(`http://localhost:5000${api.endpoint}`, {
                         method: api.method || 'POST',
                         headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-                        body: JSON.stringify({})
+                        body: JSON.stringify(body)
                     });
                     const data = await response.json().catch(() => ({}));
 

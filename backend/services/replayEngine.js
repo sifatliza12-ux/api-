@@ -809,11 +809,22 @@ const createPageTracker = (initialPage) => {
   };
 };
 
+// Visible by default: the whole point of "Run API" from the user's
+// perspective is watching the recorded workflow actually happen in a real
+// browser window, not trusting a backend log that says it happened. Opt
+// into headless (e.g. for an unattended server/CI deployment with no
+// display) via FORGEFLOW_HEADLESS=true — this is a deployment-mode switch,
+// not a per-site setting, so it stays generic.
+const HEADLESS = process.env.FORGEFLOW_HEADLESS === 'true';
+
 const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint }) => {
   const runStartedAt = Date.now();
   const values = parameterValues || {};
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ hasTouch: true });
+  const browser = await chromium.launch({ headless: HEADLESS, args: HEADLESS ? [] : ['--start-maximized'] });
+  // null viewport lets the page fill the actual (maximized) window instead
+  // of being letterboxed to Playwright's fixed default size — only
+  // meaningful in headed mode; headless has no real window to fill.
+  const context = await browser.newContext({ hasTouch: true, viewport: HEADLESS ? { width: 1280, height: 720 } : null });
   const tracker = createPageTracker(await context.newPage());
 
   const skippedSteps = [];
@@ -845,6 +856,45 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
 
         switch (step.type) {
           case 'navigation': {
+            // A navigation step recorded immediately after a click is very
+            // often not an independent command at all — content.js records
+            // "the page finished loading" as its own event, so clicking a
+            // real link (a search suggestion, a result, an article link —
+            // exactly the destination a dynamic_click resolves fresh every
+            // run) produces a click step followed by a navigation step
+            // whose literal URL is just whatever that link pointed to
+            // *during recording*. Forcing that frozen URL here would
+            // silently discard whatever the click's OWN, already-correct
+            // navigation just did — the browser already went to "Female"
+            // or "Dune" or "Apple," and this would helpfully drag it back
+            // to "Book"/"Harry Potter"/"Tesla". So: if the previous step
+            // was any kind of click and the page has already moved on from
+            // where it was when that click started, trust that — it's the
+            // live result of whatever value is currently in play, not a
+            // stale recording. Only force the recorded URL when the click
+            // genuinely didn't cause a navigation (a real, independent
+            // navigation step, or a click that just toggled something).
+            const previousStep = i > 0 ? steps[i - 1] : null;
+            const previousLog = stepLog[stepLog.length - 1];
+            const previousWasClick = previousStep && ['click', 'dblclick', 'dynamic_click', 'calendar_date'].includes(previousStep.type);
+
+            if (previousWasClick && previousLog) {
+              await waitForPageStability(page, DEFAULT_TIMEOUT_MS);
+              const dismissedAfterClick = await dismissCommonOverlays(page);
+              if (dismissedAfterClick) {
+                log.blockersDismissed.push(dismissedAfterClick);
+              }
+
+              if (page.url() !== previousLog.url) {
+                log.strategyUsed = 'navigation-already-occurred';
+                tracker.remember(page);
+                log.url = page.url();
+                break;
+              }
+              // Click didn't actually change the page — fall through to
+              // the normal forced navigation below.
+            }
+
             const url = substitutePlaceholders(step.value, values);
             if (url) {
               await page.goto(url, { waitUntil: 'domcontentloaded', timeout: DEFAULT_TIMEOUT_MS });
@@ -970,6 +1020,13 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
 
     const stepsExecuted = stepLog.filter((entry) => entry.result === 'success').length;
 
+    // Deliberately NOT closing browser/context here. The whole point of
+    // "Run API" is that the user can watch it happen and then look at the
+    // result — snapping the window shut the instant replay finishes would
+    // defeat that. It stays open until the user closes it themselves (or
+    // the backend process exits); only a FAILED run cleans up automatically
+    // (see the catch block below), so failed attempts don't silently pile
+    // up windows the user never asked to inspect.
     return {
       finalUrl,
       finalTitle,
@@ -987,9 +1044,10 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
       },
       extractionMethod: extraction.method
     };
-  } finally {
-    await context.close();
-    await browser.close();
+  } catch (error) {
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
+    throw error;
   }
 };
 

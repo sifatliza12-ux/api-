@@ -408,10 +408,18 @@ const parameterizeWorkflowRuleBased = (events) => {
       return { ...event };
     }
 
-    if (event.type === 'navigation' || event.type === 'new_page') {
-      pendingInputParamName = null;
-      pendingInputSelector = null;
-    }
+    // Any other event type (scroll, touch, navigation, new_page, ...)
+    // closes the "about to pick a suggestion" window just as much as a
+    // click does. A real suggestion selection happens in the SAME
+    // interaction burst as the typing — nothing else recorded in between.
+    // Without this, a click many steps later (after the user scrolled off
+    // to browse something else entirely) could still inherit a stale link
+    // to a field they typed into long before — exactly what happened with
+    // a plain wikilink click 15 scrolls after a "light" checkbox, which
+    // got wrongly tied to that checkbox's boolean value instead of being
+    // left as an ordinary, unparameterized click.
+    pendingInputParamName = null;
+    pendingInputSelector = null;
 
     return { ...event };
   });

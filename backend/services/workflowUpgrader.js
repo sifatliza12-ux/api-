@@ -114,13 +114,15 @@ const upgradeLegacyWorkflow = ({ steps, parameters }) => {
       return workingStep;
     }
 
-    if (workingStep.type === 'navigation' || workingStep.type === 'new_page') {
+    if (workingStep.type !== 'click' && workingStep.type !== 'dblclick') {
+      // Any other step type (scroll, touch, navigation, new_page, ...)
+      // closes the adjacency window just like a click would — see the
+      // matching comment in ruleBasedParameterizer.js. Without this, a
+      // click many steps later (after scrolling off to browse something
+      // unrelated) could inherit a stale link to a field typed into long
+      // before it.
       pendingInputParamName = null;
       pendingInputSelector = null;
-      return workingStep;
-    }
-
-    if (workingStep.type !== 'click' && workingStep.type !== 'dblclick') {
       return workingStep;
     }
 
