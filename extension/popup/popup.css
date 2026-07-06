@@ -32,9 +32,11 @@ body {
 
 .popup-shell {
     position: relative;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     width: 390px;
     min-height: 580px;
+    max-height: 600px;
     padding: 18px 16px 16px;
     display: flex;
     flex-direction: column;
@@ -898,6 +900,19 @@ pre {
  */
 .modal {
     color: #1f1330;
+    display: flex;
+    flex-direction: column;
+    /* Bounds the modal to the popup viewport so long parameter/result lists
+       get an internal scrollbar (via .modal-scroll-body) instead of growing
+       past the fixed-position overlay, where the excess became unreachable —
+       nothing outside a scroll container can be scrolled to. */
+    max-height: calc(100vh - 40px);
+}
+
+.modal-scroll-body {
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 .modal h3 {
@@ -974,6 +989,90 @@ pre {
     color: #9a1c1c;
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.28);
+}
+
+.run-status {
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.run-result--success .run-status {
+    color: #146c2e;
+}
+
+.run-result--error .run-status {
+    color: #9a1c1c;
+}
+
+.run-params-used {
+    font-size: 12px;
+    color: #4b3b63;
+    margin-bottom: 8px;
+}
+
+.result-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.result-card {
+    background: rgba(31, 19, 48, 0.03);
+    border: 1px solid rgba(31, 19, 48, 0.12);
+    border-radius: 4px;
+    padding: 8px 10px;
+}
+
+.result-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(31, 19, 48, 0.08);
+}
+
+.result-row:last-child {
+    border-bottom: none;
+}
+
+.result-row-label {
+    color: #4b3b63;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.result-row-value {
+    color: #1f1330;
+    text-align: right;
+    word-break: break-word;
+}
+
+.run-empty-note {
+    font-size: 12px;
+    color: #4b3b63;
+}
+
+.raw-response-toggle {
+    margin-top: 8px;
+    font-size: 12px;
+}
+
+.raw-response-toggle summary {
+    cursor: pointer;
+    color: #4b3b63;
+}
+
+.raw-response-pre {
+    margin-top: 6px;
+    padding: 8px;
+    background: #f6f8fa;
+    border-radius: 4px;
+    max-height: 200px;
+    overflow: auto;
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .copy-endpoint-btn.is-copied {

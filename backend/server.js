@@ -3,6 +3,13 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
+// Opens/creates backend/data/forgeflow.db and ensures the schema exists —
+// every store (User, workflows, My APIs, marketplace, replay runs) is
+// SQLite-backed now, not the Map()/arrays this project started with.
+// Required here explicitly so DB initialization is visible from the entry
+// point, even though the various services would trigger it anyway.
+require('./db');
+
 const corsOptions = require('./config/cors');
 const errorHandler = require('./middleware/errorHandler');
 const authRoutes = require('./routes/auth');
@@ -45,8 +52,8 @@ app.use('/subscription', subscriptionRoutes);
 app.use('/api', myApisRoutes);
 app.use('/api/workflows', workflowRoutes);
 
-// TODO: Add marketplace transactions and payment gateway hooks here.
-// TODO: Add MongoDB integration and persistence layer later.
+// TODO: Add marketplace transactions and payment gateway hooks here (price
+// is persisted and displayed everywhere, but nothing enforces payment yet).
 
 app.use(errorHandler);
 

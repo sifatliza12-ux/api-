@@ -1,41 +1,50 @@
 const bcrypt = require('bcrypt');
+const db = require('../db');
 
-// In-memory store — same pattern as workflowStore.js and myApisController.js
-// elsewhere in this backend; no database is wired up yet, so accounts only
-// live as long as the server process does.
+// SQLite-backed now (was an in-memory Map) — better-sqlite3 is synchronous,
+// so every function here keeps the exact same call signature callers already
+// use (no new `await` needed anywhere). Only createUser/verifyPassword stay
+// async, same as before, because bcrypt itself is async.
 const SALT_ROUNDS = 10;
 
-let nextId = 1;
-const usersByEmail = new Map();
-
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+
+// DB rows are snake_case; the rest of the app expects the camelCase shape
+// that used to come straight off the in-memory object.
+const rowToUser = (row) => row && ({
+  id: row.id,
+  email: row.email,
+  passwordHash: row.password_hash,
+  name: row.name,
+  createdAt: row.created_at
+});
+
+const insertStmt = db.prepare(
+  'INSERT INTO users (email, password_hash, name, created_at) VALUES (?, ?, ?, ?)'
+);
+const findByEmailStmt = db.prepare('SELECT * FROM users WHERE email = ?');
+const findByIdStmt = db.prepare('SELECT * FROM users WHERE id = ?');
 
 const createUser = async ({ email, password, name }) => {
   const normalizedEmail = normalizeEmail(email);
   const passwordHash = await bcrypt.hash(String(password), SALT_ROUNDS);
+  const createdAt = new Date().toISOString();
+  const displayName = name || normalizedEmail.split('@')[0];
 
-  const user = {
-    id: nextId++,
+  const result = insertStmt.run(normalizedEmail, passwordHash, displayName, createdAt);
+
+  return {
+    id: result.lastInsertRowid,
     email: normalizedEmail,
     passwordHash,
-    name: name || normalizedEmail.split('@')[0],
-    createdAt: new Date().toISOString()
+    name: displayName,
+    createdAt
   };
-
-  usersByEmail.set(normalizedEmail, user);
-  return user;
 };
 
-const findByEmail = (email) => usersByEmail.get(normalizeEmail(email)) || null;
+const findByEmail = (email) => rowToUser(findByEmailStmt.get(normalizeEmail(email))) || null;
 
-const findById = (id) => {
-  for (const user of usersByEmail.values()) {
-    if (user.id === Number(id)) {
-      return user;
-    }
-  }
-  return null;
-};
+const findById = (id) => rowToUser(findByIdStmt.get(Number(id))) || null;
 
 const verifyPassword = (user, password) => bcrypt.compare(String(password), user.passwordHash);
 

@@ -120,16 +120,22 @@ const getAuthToken = async () => {
 };
 
 const saveWorkflowToBackend = async ({ name, description, events }) => {
+    console.log('[Recorder][pipeline] step 1: events received from recorder', { name, eventCount: events?.length ?? 0 });
+
     if (!Array.isArray(events) || events.length === 0) {
+        console.warn('[Recorder][pipeline] FAILED at step 1: no events to save');
         return { ok: false, error: 'No events were recorded.' };
     }
 
     const token = await getAuthToken();
+    console.log('[Recorder][pipeline] auth token present?', Boolean(token));
     if (!token) {
+        console.warn('[Recorder][pipeline] FAILED before reaching backend: no auth token in chrome.storage.local — request was never sent');
         return { ok: false, error: 'You must be logged in to save a workflow. Open the ForgeFlow popup and log in first.' };
     }
 
     try {
+        console.log('[Recorder][pipeline] sending POST /api/workflows/parameterize', { eventCount: events.length });
         const response = await fetch(`${BACKEND_BASE_URL}/api/workflows/parameterize`, {
             method: 'POST',
             headers: {
@@ -139,13 +145,17 @@ const saveWorkflowToBackend = async ({ name, description, events }) => {
             body: JSON.stringify({ name, description, events })
         });
         const data = await response.json().catch(() => ({}));
+        console.log('[Recorder][pipeline] backend responded', { status: response.status, data });
 
         if (!response.ok || !data.success) {
+            console.warn('[Recorder][pipeline] FAILED at backend:', data.message || response.status);
             return { ok: false, error: data.message || `Save failed (HTTP ${response.status})` };
         }
 
+        console.log('[Recorder][pipeline] SUCCESS — workflow saved', { workflowId: data.workflowId });
         return { ok: true, workflow: data };
     } catch (error) {
+        console.error('[Recorder][pipeline] FAILED — network/fetch error reaching backend', error);
         return { ok: false, error: error.message || 'Could not reach the backend.' };
     }
 };

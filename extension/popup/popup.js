@@ -541,6 +541,66 @@ const popupApp = {
             </div>
         `;
 
+        // "hotel_name" / "hotelName" -> "Hotel Name" — keys are whatever the
+        // backend's extraction pipeline settled on (see
+        // backend/services/extraction/semanticNaming.js), so this only needs
+        // to handle snake_case and camelCase, not arbitrary strings.
+        const prettifyFieldName = (key) => String(key)
+            .replace(/_/g, ' ')
+            .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+            .replace(/\b\w/g, (c) => c.toUpperCase());
+
+        const formatDuration = (ms) => {
+            if (typeof ms !== 'number' || Number.isNaN(ms)) return '';
+            return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+        };
+
+        const buildResultCardsHtml = (items) => items.map((item) => {
+            const rows = Object.entries(item || {}).map(([key, value]) => `
+                <div class="result-row">
+                    <span class="result-row-label">${escapeHtml(prettifyFieldName(key))}</span>
+                    <span class="result-row-value">${escapeHtml(value === null || value === undefined || value === '' ? '—' : String(value))}</span>
+                </div>
+            `).join('');
+            return `<div class="result-card">${rows}</div>`;
+        }).join('');
+
+        const buildParamsUsedHtml = (parametersApplied) => {
+            const entries = Object.entries(parametersApplied || {});
+            if (!entries.length) return '';
+            const parts = entries.map(([key, value]) => (
+                `${escapeHtml(key)} = ${escapeHtml(value === null || value === undefined || value === '' ? '—' : String(value))}`
+            ));
+            return `<p class="run-params-used">Ran with: ${parts.join(', ')}</p>`;
+        };
+
+        // Builds the full success-state body: status line, what parameters
+        // were actually used, the extracted results (or an explicit "found
+        // nothing" note — never raw JSON by default), and a collapsed raw
+        // response for anyone who does want it. See requirements 1-4 of the
+        // run-results feature.
+        const buildRunResultHtml = (data) => {
+            const durationSuffix = data.execution && typeof data.execution.durationMs === 'number'
+                ? ` in ${formatDuration(data.execution.durationMs)}`
+                : '';
+            const statusLine = `<p class="run-status">✓ ${escapeHtml(data.message || 'Run succeeded.')}${durationSuffix}</p>`;
+            const paramsLine = buildParamsUsedHtml(data.parametersApplied);
+
+            const items = Array.isArray(data.data) ? data.data : [];
+            const resultsHtml = items.length
+                ? `<div class="result-cards">${buildResultCardsHtml(items)}</div>`
+                : '<p class="run-empty-note">Workflow ran successfully, but no results were extracted from the final page.</p>';
+
+            const rawToggle = `
+                <details class="raw-response-toggle">
+                    <summary>View raw response</summary>
+                    <pre class="raw-response-pre">${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+                </details>
+            `;
+
+            return `${statusLine}${paramsLine}${resultsHtml}${rawToggle}`;
+        };
+
         const openApiModal = (api) => {
             const parameters = Array.isArray(api.parameters) ? api.parameters : [];
 
@@ -572,12 +632,14 @@ const popupApp = {
 
             modal.innerHTML = `
                 <h3>${escapeHtml(api.name)}</h3>
-                <p><strong>Endpoint:</strong> ${escapeHtml(api.endpoint)}</p>
-                <p><strong>Method:</strong> ${escapeHtml(api.method)}</p>
-                <p><strong>Version:</strong> ${escapeHtml(api.version || '')}</p>
-                <pre style="background:#f6f8fa;padding:8px;border-radius:4px;max-height:240px;overflow:auto">${escapeHtml(api.generatedCode || '')}</pre>
-                ${paramsHtml}
-                <div class="run-result" style="margin-top:10px;font-size:13px;display:none"></div>
+                <div class="modal-scroll-body">
+                    <p><strong>Endpoint:</strong> ${escapeHtml(api.endpoint)}</p>
+                    <p><strong>Method:</strong> ${escapeHtml(api.method)}</p>
+                    <p><strong>Version:</strong> ${escapeHtml(api.version || '')}</p>
+                    <pre style="background:#f6f8fa;padding:8px;border-radius:4px;max-height:240px;overflow:auto">${escapeHtml(api.generatedCode || '')}</pre>
+                    ${paramsHtml}
+                    <div class="run-result" style="margin-top:10px;font-size:13px;display:none"></div>
+                </div>
                 <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
                     <button class="btn btn-primary modal-run-api">Run API</button>
                     <button class="btn btn-secondary modal-close">Close</button>
@@ -598,6 +660,7 @@ const popupApp = {
                 runBtn.textContent = 'Running…';
                 resultEl.style.display = 'none';
                 resultEl.className = 'run-result';
+                resultEl.innerHTML = '';
 
                 try {
                     // No values sent — the backend fills every parameter from
@@ -611,8 +674,7 @@ const popupApp = {
 
                     if (response.ok && data.success) {
                         resultEl.classList.add('run-result--success');
-                        const suffix = data.finalUrl ? ` Ended at ${data.finalUrl}.` : '';
-                        resultEl.textContent = `✓ ${data.message || 'Run succeeded.'}${suffix}`;
+                        resultEl.innerHTML = buildRunResultHtml(data);
                     } else {
                         resultEl.classList.add('run-result--error');
                         resultEl.textContent = `✗ ${data.message || `Run failed (HTTP ${response.status}).`}`;
@@ -794,10 +856,12 @@ const popupApp = {
             modal.style.width = '100%';
             modal.innerHTML = `
                 <h3>${escapeHtml(item.name)}</h3>
-                <p>${escapeHtml(item.description || '')}</p>
-                <p><strong>Method:</strong> ${escapeHtml(item.method || '')} • <strong>Version:</strong> ${escapeHtml(item.version || '')}</p>
-                <p><strong>Creator:</strong> ${escapeHtml(item.publisher || '')} • <strong>Price:</strong> <span id="market-price-${item.id}">${item.price && item.price>0? '$'+item.price : 'Free'}</span></p>
-                <p><strong>Published:</strong> ${formatRelativeDate(item.createdAt)}</p>
+                <div class="modal-scroll-body">
+                    <p>${escapeHtml(item.description || '')}</p>
+                    <p><strong>Method:</strong> ${escapeHtml(item.method || '')} • <strong>Version:</strong> ${escapeHtml(item.version || '')}</p>
+                    <p><strong>Creator:</strong> ${escapeHtml(item.publisher || '')} • <strong>Price:</strong> <span id="market-price-${item.id}">${item.price && item.price>0? '$'+item.price : 'Free'}</span></p>
+                    <p><strong>Published:</strong> ${formatRelativeDate(item.createdAt)}</p>
+                </div>
                 <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
                     <button class="btn btn-secondary edit-price">Edit Price</button>
                     <button class="btn btn-secondary remove-listing">Remove Listing</button>

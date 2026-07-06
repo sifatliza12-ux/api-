@@ -1,4 +1,5 @@
 const { condenseEvents } = require('./eventCondenser');
+const { classifyValueText } = require('./dynamicValueDetector');
 
 // Turns a raw selector fragment ("movie-title", "email_address", "q") into
 // word tokens, splitting on camelCase, snake_case, kebab-case, and other
@@ -144,6 +145,16 @@ const pickNameSource = (event) => {
   return null;
 };
 
+const dedupeName = (name, usedNames) => {
+  let uniqueName = name;
+  let suffix = 2;
+  while (usedNames.has(uniqueName)) {
+    uniqueName = `${name}${suffix}`;
+    suffix += 1;
+  }
+  return uniqueName;
+};
+
 const buildDescription = (describe, label, event) => {
   const base = describe(label);
   if (typeof event.value === 'string' && event.value && event.value !== '[REDACTED]') {
@@ -177,59 +188,179 @@ const inferType = (value, selector) => {
   return 'text';
 };
 
+// A click/dblclick target is treated as a *dynamic* parameter rather than a
+// permanent, hardcoded selector target when either:
+//   - content.js flagged it as sitting inside a calendar-like container
+//     (meta.inCalendarContext, or a data-date/datetime attribute on it or
+//     an ancestor), or
+//   - its visible text itself matches a date/date-range/time/price/number
+//     pattern (dynamicValueDetector.classifyValueText) — this is the path
+//     that also covers legacy events recorded before content.js captured
+//     any of the richer meta, since it only needs the plain text.
+// Calendar clicks get their own step type (calendar_date) because replaying
+// them needs month-navigation + semantic date matching, not just a fresh
+// text search — see replayEngine.js. Everything else dynamic (price/time/
+// number/free-text selections such as an autocomplete suggestion) becomes
+// dynamic_click, which just re-searches the live page for the current
+// parameter's value instead of the literal text recorded months ago.
+// Legacy steps (recorded before content.js captured aria-label separately)
+// often still have it embedded in the old single `selector` string, e.g.
+// `span[aria-label="Thursday, 30 July 2026"]` — the visible click text can
+// be just the bare day number ("30"), which alone looks like a plain number,
+// not a date. Pulling the label back out of the selector is what lets a
+// legacy calendar-cell click still classify correctly even with no meta.
+const extractAriaLabelFromSelector = (selector) => {
+  if (!selector) return null;
+  const match = String(selector).match(/aria-label="([^"]*)"/);
+  return match ? match[1] : null;
+};
+
+const classifyDynamicClick = (event) => {
+  if (event.type !== 'click' && event.type !== 'dblclick') {
+    return null;
+  }
+
+  const meta = event.meta || {};
+  const text = typeof event.value === 'string' ? event.value.trim() : '';
+  const textClassification = classifyValueText(text);
+
+  const selectorLabel = extractAriaLabelFromSelector(event.selector);
+  const selectorClassification = selectorLabel ? classifyValueText(selectorLabel) : null;
+  const selectorLooksLikeDate = selectorClassification && selectorClassification.type === 'date';
+
+  if (meta.inCalendarContext || meta.dateAttr || selectorLooksLikeDate
+    || (textClassification && textClassification.type === 'date') || (textClassification && textClassification.type === 'date_range')) {
+    const defaultValue = (selectorLooksLikeDate && selectorClassification.normalized)
+      || (textClassification && textClassification.normalized)
+      || meta.dateAttr
+      || text;
+    return {
+      kind: 'calendar_date',
+      paramType: 'date',
+      defaultValue,
+      description: `A calendar date selected during recording (originally "${selectorLooksLikeDate ? selectorLabel : text}"). Resolved semantically on replay — it will find the matching day even if the calendar has moved on to a different month.`
+    };
+  }
+
+  if (textClassification) {
+    const kindLabel = { price: 'price', time: 'time', number: 'numeric' }[textClassification.type] || 'text';
+    return {
+      kind: 'dynamic_click',
+      paramType: textClassification.type === 'number' ? 'number' : 'text',
+      defaultValue: text,
+      description: `A ${kindLabel} option selected during recording (originally "${text}"). Replay re-searches the page for whatever value is supplied, instead of the exact original text.`
+    };
+  }
+
+  if (meta.inListboxContext && text) {
+    return {
+      kind: 'dynamic_click',
+      paramType: 'text',
+      defaultValue: text,
+      description: `A suggestion/option selected during recording (originally "${text}"). Replay re-searches the page for whatever value is supplied, instead of the exact original text.`
+    };
+  }
+
+  return null;
+};
+
+const NAME_PREFIX_BY_KIND = {
+  calendar_date: 'calendarDate',
+  price: 'priceOption',
+  time: 'timeOption',
+  number: 'numberOption',
+  text: 'selection'
+};
+
+// Shared by the live parameterizer (fresh recordings, called from
+// parameterizeWorkflowRuleBased below) and workflowUpgrader.js (retroactively
+// upgrading legacy workflows saved before this feature existed) — one place
+// that turns a classified dynamic click into an actual parameter + rewritten
+// step, so both paths can never drift apart on naming/typing rules.
+const buildDynamicClickUpgrade = (event, dynamicCountByPrefix, usedNames) => {
+  const dynamicClick = classifyDynamicClick(event);
+  if (!dynamicClick) {
+    return null;
+  }
+
+  const textClassification = classifyValueText(typeof event.value === 'string' ? event.value.trim() : '');
+  const prefixKey = dynamicClick.kind === 'calendar_date' ? 'calendar_date' : ((textClassification && textClassification.type) || 'text');
+  const prefix = NAME_PREFIX_BY_KIND[prefixKey] || 'selection';
+  dynamicCountByPrefix[prefix] = (dynamicCountByPrefix[prefix] || 0) + 1;
+
+  const name = `${prefix}${dynamicCountByPrefix[prefix]}`;
+  const uniqueName = dedupeName(name, usedNames);
+
+  const parameter = {
+    name: uniqueName,
+    type: dynamicClick.paramType,
+    label: toLabel(name, MAX_NAME_WORDS) || name,
+    description: dynamicClick.description,
+    defaultValue: dynamicClick.defaultValue,
+    eventIndex: event.index
+  };
+
+  const step = { ...event, type: dynamicClick.kind, value: `{{${uniqueName}}}` };
+  return { parameter, step };
+};
+
 const parameterizeWorkflowRuleBased = (events) => {
+  console.log('[Backend][pipeline] step 3: parameterizer received', { eventCount: (events || []).length });
   const condensed = condenseEvents(events);
 
   const parameters = [];
   const usedNames = new Set();
   let variableCount = 0;
+  const dynamicCountByPrefix = {};
 
   const steps = condensed.map((event) => {
-    const isVariable = event.type === 'input' || event.type === 'change';
-    if (!isVariable) {
-      return { ...event };
+    if (event.type === 'input' || event.type === 'change') {
+      variableCount += 1;
+
+      const nameSource = pickNameSource(event);
+      let name = nameSource ? toCamelCase(nameSource.raw, MAX_NAME_WORDS) : '';
+      let label = nameSource ? toLabel(nameSource.raw, MAX_NAME_WORDS) : '';
+      let description;
+
+      if (!name) {
+        // Nothing usable was found (or every candidate looked like a
+        // generated identifier) — a clean generic fallback beats exposing a
+        // raw DOM id/class in a parameter that may end up shown in a
+        // marketplace listing.
+        name = `field${variableCount}`;
+        label = `Field ${variableCount}`;
+        description = 'A value captured during recording (no descriptive label was found on the page).';
+      } else {
+        description = buildDescription(nameSource.describe, label, event);
+      }
+
+      const uniqueName = dedupeName(name, usedNames);
+      usedNames.add(uniqueName);
+
+      parameters.push({
+        name: uniqueName,
+        type: inferType(event.value, event.selector),
+        label,
+        description,
+        defaultValue: event.value ?? null,
+        eventIndex: event.index
+      });
+
+      return { ...event, value: `{{${uniqueName}}}` };
     }
 
-    variableCount += 1;
-
-    const nameSource = pickNameSource(event);
-    let name = nameSource ? toCamelCase(nameSource.raw, MAX_NAME_WORDS) : '';
-    let label = nameSource ? toLabel(nameSource.raw, MAX_NAME_WORDS) : '';
-    let description;
-
-    if (!name) {
-      // Nothing usable was found (or every candidate looked like a
-      // generated identifier) — a clean generic fallback beats exposing a
-      // raw DOM id/class in a parameter that may end up shown in a
-      // marketplace listing.
-      name = `field${variableCount}`;
-      label = `Field ${variableCount}`;
-      description = 'A value captured during recording (no descriptive label was found on the page).';
-    } else {
-      description = buildDescription(nameSource.describe, label, event);
+    const upgrade = buildDynamicClickUpgrade(event, dynamicCountByPrefix, usedNames);
+    if (upgrade) {
+      usedNames.add(upgrade.parameter.name);
+      parameters.push(upgrade.parameter);
+      return upgrade.step;
     }
 
-    let uniqueName = name;
-    let suffix = 2;
-    while (usedNames.has(uniqueName)) {
-      uniqueName = `${name}${suffix}`;
-      suffix += 1;
-    }
-    usedNames.add(uniqueName);
-
-    parameters.push({
-      name: uniqueName,
-      type: inferType(event.value, event.selector),
-      label,
-      description,
-      defaultValue: event.value ?? null,
-      eventIndex: event.index
-    });
-
-    return { ...event, value: `{{${uniqueName}}}` };
+    return { ...event };
   });
 
+  console.log('[Backend][pipeline] step 4: workflow template created', { stepCount: steps.length, parameterCount: parameters.length });
   return { parameters, steps };
 };
 
-module.exports = { parameterizeWorkflowRuleBased };
+module.exports = { parameterizeWorkflowRuleBased, classifyDynamicClick, buildDynamicClickUpgrade };

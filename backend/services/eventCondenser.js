@@ -6,6 +6,8 @@
 const NOISE_EVENT_TYPES = new Set(['keydown', 'keyup']);
 
 const condenseEvents = (events) => {
+  console.log('[Backend][pipeline] step 2: event condenser received', { rawEventCount: (events || []).length });
+
   const condensed = [];
   const lastInputIndexBySelector = new Map();
 
@@ -31,6 +33,7 @@ const condenseEvents = (events) => {
       originalIndex,
       type: event.type,
       selector: event.selector || null,
+      locators: Array.isArray(event.locators) ? event.locators : null,
       value: event.value ?? null,
       url: event.url || null,
       meta: event.meta || null,
@@ -42,6 +45,7 @@ const condenseEvents = (events) => {
     }
   });
 
+  console.log('[Backend][pipeline] step 2: event condenser output', { condensedEventCount: condensed.length });
   return condensed;
 };
 
