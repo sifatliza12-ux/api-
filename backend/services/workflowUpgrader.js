@@ -81,6 +81,14 @@ const upgradeLegacyWorkflow = ({ steps, parameters }) => {
   // before it" adjacency judgment is identical.
   let pendingInputParamName = null;
   let pendingInputSelector = null;
+  let pendingInputValue = null;
+
+  // A legacy input/change step's value is already a placeholder
+  // ("{{destination}}"), not the raw typed text — this looks the original
+  // text back up from the parameter's stored defaultValue, so the
+  // looksLikePlausibleSuggestion text-overlap check has something real to
+  // compare a candidate suggestion click against.
+  const defaultValueByParamName = new Map((parameters || []).map((p) => [p.name, p.defaultValue]));
 
   const nextSteps = (steps || []).map((step) => {
     // Already semantic (recorded fresh, or upgraded on a previous load) —
@@ -95,6 +103,7 @@ const upgradeLegacyWorkflow = ({ steps, parameters }) => {
     if (step.type === 'calendar_date' || step.type === 'dynamic_click') {
       pendingInputParamName = null;
       pendingInputSelector = null;
+      pendingInputValue = null;
       return step;
     }
 
@@ -110,6 +119,7 @@ const upgradeLegacyWorkflow = ({ steps, parameters }) => {
       if (match && workingStep.selector !== pendingInputSelector) {
         pendingInputParamName = match[1];
         pendingInputSelector = workingStep.selector;
+        pendingInputValue = defaultValueByParamName.get(match[1]) ?? null;
       }
       return workingStep;
     }
@@ -123,12 +133,14 @@ const upgradeLegacyWorkflow = ({ steps, parameters }) => {
       // before it.
       pendingInputParamName = null;
       pendingInputSelector = null;
+      pendingInputValue = null;
       return workingStep;
     }
 
-    const upgrade = buildDynamicClickUpgrade(workingStep, dynamicCountByPrefix, usedNames, { relatedParamName: pendingInputParamName });
+    const upgrade = buildDynamicClickUpgrade(workingStep, dynamicCountByPrefix, usedNames, { relatedParamName: pendingInputParamName, relatedParamValue: pendingInputValue });
     pendingInputParamName = null;
     pendingInputSelector = null;
+    pendingInputValue = null;
 
     if (!upgrade) {
       return workingStep;

@@ -215,6 +215,69 @@ const extractAriaLabelFromSelector = (selector) => {
   return match ? match[1] : null;
 };
 
+// Element types that can never behave like a clickable suggestion, no
+// matter how "adjacent" they are to the input that preceded them: a native
+// <select> renders its own OS-level picker (there's nothing in the page's
+// accessibility tree to text-search for), and body/html are never
+// themselves the click target in any real recording.
+const NEVER_SUGGESTION_TAGS = new Set(['select', 'option', 'body', 'html']);
+// Roles that mean "this is a structural/navigation control," not an item
+// from a dynamically generated list.
+const NON_SUGGESTION_ROLES = new Set(['navigation', 'menubar', 'tablist', 'tab']);
+const SUGGESTION_ROLES = new Set(['option', 'listitem', 'menuitem']);
+
+const normalizeForOverlap = (value) => String(value || '').toLowerCase().trim();
+
+// A real suggestion's text either contains, or is contained by, whatever
+// was actually typed ("Female" clicked after typing "Female"; "London
+// Heathrow Airport" clicked after typing "London"). An unrelated control
+// that merely happens to be the next click ("5 adults · 3 children · 4
+// rooms" after typing a destination) shares no text with it at all.
+const textOverlapsTypedValue = (clickText, typedValue) => {
+  const click = normalizeForOverlap(clickText);
+  const typed = normalizeForOverlap(typedValue);
+  if (!click || !typed) return false;
+  return click.includes(typed) || typed.includes(click);
+};
+
+// Requirement: only link a parameter to a click when the clicked element
+// is PLAUSIBLY a dynamic suggestion/option generated from that input —
+// not just "the next thing that got clicked." Generic across any site:
+// every signal here is a structural/accessibility property (tag, role,
+// listbox-container membership) or a text-overlap comparison, never a
+// site-specific selector or class name.
+const looksLikePlausibleSuggestion = (event, relatedParamValue) => {
+  const meta = event.meta || {};
+  const tag = String(meta.tag || '').toLowerCase();
+
+  if (NEVER_SUGGESTION_TAGS.has(tag)) {
+    return false;
+  }
+  if (meta.inCalendarContext) {
+    return false; // Calendar controls are handled by the calendar_date path, never linked here.
+  }
+  if (meta.role && NON_SUGGESTION_ROLES.has(meta.role)) {
+    return false;
+  }
+
+  // Strong, structural signals: sits inside a real listbox/autocomplete
+  // container, or the element's own role says "this is a list option."
+  if (meta.inListboxContext) {
+    return true;
+  }
+  if (meta.role && SUGGESTION_ROLES.has(meta.role)) {
+    return true;
+  }
+
+  // No structural signal available (a legacy recording, or content.js
+  // couldn't detect a container this time) — fall back to comparing what
+  // was clicked against what was actually typed. This is what separates a
+  // real suggestion from an unrelated button/link that happened to be the
+  // next click.
+  const text = typeof event.value === 'string' ? event.value.trim() : '';
+  return textOverlapsTypedValue(text, relatedParamValue);
+};
+
 const classifyDynamicClick = (event, context = {}) => {
   if (event.type !== 'click' && event.type !== 'dblclick') {
     return null;
@@ -257,21 +320,26 @@ const classifyDynamicClick = (event, context = {}) => {
   // an autocomplete option only exists *because of* whatever was just typed
   // into the field right before it, so it should track that field's live
   // value automatically, not need to be kept in sync as a second parameter.
-  // meta.inListboxContext (role=listbox/option, or a suggestion/dropdown
-  // class — see content.js's getClickContext) is the strong, live-recording
-  // signal; context.relatedParamName is the adjacency fallback for legacy
-  // workflows that predate that capture — "this click came immediately
-  // after typing into a field" is, on essentially every real site, exactly
-  // what selecting a search/destination/movie/stock-symbol suggestion looks
-  // like, regardless of what that site's dropdown markup happens to be.
-  if ((meta.inListboxContext || context.relatedParamName) && text) {
-    if (context.relatedParamName) {
-      return {
-        kind: 'dynamic_click',
-        linkedParam: context.relatedParamName,
-        description: `A suggestion selected during recording (originally "${text}") for the value typed into "${context.relatedParamName}". Replay searches the live suggestion list for an option matching whatever value that parameter is given, instead of the exact original suggestion.`
-      };
-    }
+  // Linking to that existing parameter is checked FIRST and takes priority
+  // — a suggestion click is still a suggestion click whether or not
+  // content.js also flagged it as sitting in a listbox container. Merely
+  // being the next click after typing is NOT enough on its own, though —
+  // that alone matched an unrelated occupancy-summary button and a native
+  // <select> in real recordings — so linking additionally requires
+  // looksLikePlausibleSuggestion to confirm the clicked element could
+  // actually behave like a live suggestion.
+  if (context.relatedParamName && text && looksLikePlausibleSuggestion(event, context.relatedParamValue)) {
+    return {
+      kind: 'dynamic_click',
+      linkedParam: context.relatedParamName,
+      description: `A suggestion selected during recording (originally "${text}") for the value typed into "${context.relatedParamName}". Replay searches the live suggestion list for an option matching whatever value that parameter is given, instead of the exact original suggestion.`
+    };
+  }
+
+  // No adjacent input to link to, but the click still clearly sits inside
+  // a live suggestion/listbox container — still worth capturing as its own
+  // parameter rather than leaving it a frozen literal selector.
+  if (meta.inListboxContext && text) {
     return {
       kind: 'dynamic_click',
       paramType: 'text',
@@ -351,6 +419,7 @@ const parameterizeWorkflowRuleBased = (events) => {
   // window closes once anything is clicked) or navigation.
   let pendingInputParamName = null;
   let pendingInputSelector = null;
+  let pendingInputValue = null;
 
   const steps = condensed.map((event) => {
     if (event.type === 'input' || event.type === 'change') {
@@ -388,15 +457,17 @@ const parameterizeWorkflowRuleBased = (events) => {
       if (event.selector !== pendingInputSelector) {
         pendingInputParamName = uniqueName;
         pendingInputSelector = event.selector;
+        pendingInputValue = typeof event.value === 'string' ? event.value : null;
       }
 
       return { ...event, value: `{{${uniqueName}}}` };
     }
 
     if (event.type === 'click' || event.type === 'dblclick') {
-      const upgrade = buildDynamicClickUpgrade(event, dynamicCountByPrefix, usedNames, { relatedParamName: pendingInputParamName });
+      const upgrade = buildDynamicClickUpgrade(event, dynamicCountByPrefix, usedNames, { relatedParamName: pendingInputParamName, relatedParamValue: pendingInputValue });
       pendingInputParamName = null;
       pendingInputSelector = null;
+      pendingInputValue = null;
 
       if (upgrade) {
         if (upgrade.parameter) {
@@ -420,6 +491,7 @@ const parameterizeWorkflowRuleBased = (events) => {
     // left as an ordinary, unparameterized click.
     pendingInputParamName = null;
     pendingInputSelector = null;
+    pendingInputValue = null;
 
     return { ...event };
   });
@@ -428,4 +500,4 @@ const parameterizeWorkflowRuleBased = (events) => {
   return { parameters, steps };
 };
 
-module.exports = { parameterizeWorkflowRuleBased, classifyDynamicClick, buildDynamicClickUpgrade };
+module.exports = { parameterizeWorkflowRuleBased, classifyDynamicClick, buildDynamicClickUpgrade, looksLikePlausibleSuggestion };
