@@ -1093,25 +1093,6 @@ pre {
     background: linear-gradient(135deg, rgba(139, 92, 246, 0.24), rgba(236, 72, 153, 0.24));
 }
 
-.marketplace-view {
-    gap: 10px;
-    padding-top: 2px;
-}
-
-.marketplace-header {
-    align-items: flex-start;
-}
-
-.marketplace-title-group h2 {
-    font-size: 18px;
-    margin-bottom: 2px;
-}
-
-.marketplace-title-group p {
-    font-size: 11px;
-    color: var(--muted);
-    line-height: 1.4;
-}
 
 .search-field {
     display: flex;
@@ -1141,112 +1122,6 @@ pre {
     color: #9b8cb7;
 }
 
-.chip-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.chip {
-    padding: 7px 10px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.04);
-    color: var(--muted);
-    font-size: 11px;
-    font-weight: 600;
-}
-
-.chip.active {
-    color: var(--text);
-    background: rgba(139, 92, 246, 0.2);
-    border-color: rgba(255, 255, 255, 0.16);
-}
-
-.marketplace-section {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.marketplace-section h3 {
-    font-size: 13px;
-    color: var(--text);
-}
-
-.market-card {
-    display: flex;
-    flex-direction: column;
-    gap: 9px;
-    padding: 12px;
-    border-radius: 16px;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    box-shadow: 0 10px 24px rgba(8, 6, 16, 0.16);
-    transition: transform 0.25s ease, box-shadow 0.25s ease;
-}
-
-.market-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 14px 28px rgba(5, 4, 14, 0.24);
-}
-
-.market-card-top {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-}
-
-.market-card-top h4 {
-    font-size: 13px;
-    margin-bottom: 4px;
-}
-
-.market-card-top p {
-    font-size: 11px;
-    line-height: 1.4;
-    color: var(--muted);
-}
-
-.market-price,
-.listing-badge {
-    padding: 4px 8px;
-    border-radius: 999px;
-    background: rgba(139, 92, 246, 0.18);
-    color: #f7dfff;
-    font-size: 11px;
-    font-weight: 700;
-    white-space: nowrap;
-}
-
-.market-meta {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    font-size: 10px;
-    color: var(--muted);
-}
-
-.market-action-btn {
-    width: 100%;
-    padding: 9px 12px;
-    font-size: 12px;
-}
-
-.market-card--listing {
-    background: rgba(255, 255, 255, 0.06);
-}
-
-.listing-actions {
-    display: flex;
-    gap: 8px;
-}
-
-.listing-note {
-    font-size: 11px;
-    color: var(--muted);
-    line-height: 1.4;
-}
 
 @keyframes pulse {
     0% {

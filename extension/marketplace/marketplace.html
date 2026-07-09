@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ForgeFlow — Marketplace</title>
+    <link rel="stylesheet" href="marketplace.css">
+</head>
+<body>
+    <div class="page-shell">
+        <header class="topbar">
+            <div class="brand-group">
+                <div class="brand-mark" aria-hidden="true">FF</div>
+                <div class="brand-copy">
+                    <p class="eyebrow">ForgeFlow</p>
+                    <h1>Marketplace</h1>
+                </div>
+            </div>
+            <div class="topbar-actions">
+                <p class="topbar-subtitle">Discover, publish, and monetize reusable workflow APIs.</p>
+                <button type="button" id="refresh-btn" class="btn btn-secondary" aria-label="Refresh marketplace listings">Refresh</button>
+            </div>
+        </header>
+
+        <main class="page-content">
+            <section class="toolbar" aria-label="Marketplace search and filters">
+                <label class="search-field" for="marketplace-search">
+                    <span class="search-icon" aria-hidden="true">⌕</span>
+                    <input type="text" id="marketplace-search" placeholder="Search by name, description, or creator..." aria-label="Search marketplace APIs by name, description, or creator">
+                </label>
+
+                <div class="toolbar-controls">
+                    <label class="control-field">
+                        <span>Filter</span>
+                        <select id="marketplace-filter">
+                            <option value="all">All</option>
+                            <option value="free">Free</option>
+                            <option value="paid">Paid</option>
+                        </select>
+                    </label>
+                    <label class="control-field">
+                        <span>Sort</span>
+                        <select id="marketplace-sort">
+                            <option value="newest">Newest</option>
+                            <option value="downloads-desc">Most Downloaded</option>
+                            <option value="rating-desc">Highest Rated</option>
+                            <option value="price-asc">Lowest Price</option>
+                            <option value="price-desc">Highest Price</option>
+                        </select>
+                    </label>
+                </div>
+            </section>
+
+            <div class="chip-row" id="marketplace-category-chips" aria-label="Marketplace categories">
+                <button type="button" class="chip active" data-category="all">All</button>
+                <button type="button" class="chip" data-category="productivity">Productivity</button>
+                <button type="button" class="chip" data-category="travel">Travel</button>
+                <button type="button" class="chip" data-category="finance">Finance</button>
+                <button type="button" class="chip" data-category="shopping">Shopping</button>
+                <button type="button" class="chip" data-category="education">Education</button>
+                <button type="button" class="chip" data-category="entertainment">Entertainment</button>
+                <button type="button" class="chip" data-category="social-media">Social Media</button>
+                <button type="button" class="chip" data-category="other">Other</button>
+            </div>
+
+            <section class="marketplace-section marketplace-section--featured" id="marketplace-featured-section" aria-label="Featured APIs" hidden>
+                <div class="section-heading">
+                    <h2>Featured APIs</h2>
+                    <span class="section-tag">Trending</span>
+                </div>
+                <div id="marketplace-featured" class="marketplace-featured-row"></div>
+            </section>
+
+            <section class="marketplace-section" aria-label="Browse APIs">
+                <div class="section-heading">
+                    <h2>Browse APIs</h2>
+                    <span class="result-count" id="marketplace-result-count"></span>
+                </div>
+                <div id="marketplace-list" class="marketplace-grid"></div>
+            </section>
+
+            <section class="marketplace-section" aria-label="Your published APIs">
+                <div class="section-heading">
+                    <h2>My Published APIs</h2>
+                </div>
+                <div class="marketplace-grid marketplace-grid--listings">
+                    <article class="market-card market-card--listing">
+                        <div class="market-card-top">
+                            <div class="market-card-heading">
+                                <h3>Student Record API</h3>
+                                <p class="listing-price-line">Original purchase price: $10 • Selling price: $15</p>
+                            </div>
+                            <span class="listing-badge">Listed for Sale</span>
+                        </div>
+                        <div class="market-meta">
+                            <span>Status: Listed</span>
+                            <span>Owner: You</span>
+                        </div>
+                        <div class="listing-actions">
+                            <button type="button" id="edit-price-btn" class="btn btn-secondary" aria-label="Edit listing price">Edit Price</button>
+                            <button type="button" id="remove-listing-btn" class="btn btn-secondary" aria-label="Remove listing">Remove Listing</button>
+                        </div>
+                        <p class="listing-note">Users can list their generated APIs for sale or adjust their selling price.</p>
+                    </article>
+                </div>
+            </section>
+
+            <p class="footer-note">Marketplace purchases and publishing will be available in a future milestone.</p>
+        </main>
+    </div>
+
+    <script src="marketplace.js"></script>
+</body>
+</html>

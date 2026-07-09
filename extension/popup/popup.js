@@ -13,7 +13,6 @@ const popupApp = {
         const generationView = document.getElementById('generation-view');
         const generatedView = document.getElementById('generated-view');
         const myApisView = document.getElementById('my-apis-view');
-        const marketplaceView = document.getElementById('marketplace-view');
 
         const loginButton = document.getElementById('login-btn');
         const trialButton = document.getElementById('trial-btn');
@@ -43,15 +42,8 @@ const popupApp = {
         const navMarketplace = document.getElementById('nav-marketplace');
         const navProfile = document.getElementById('nav-profile');
         const marketplaceCard = document.getElementById('marketplace-card');
-        const backToDashboardFromMarketplaceButton = document.getElementById('back-to-dashboard-from-marketplace-btn');
-        const marketplaceSearch = document.getElementById('marketplace-search');
-        const marketplaceList = document.getElementById('marketplace-list');
-        const marketplaceFilter = document.getElementById('marketplace-filter');
-        const marketplaceSort = document.getElementById('marketplace-sort');
-        const editPriceButton = document.getElementById('edit-price-btn');
-        const removeListingButton = document.getElementById('remove-listing-btn');
 
-        if (!loginView || !dashboardView || !recordingView || !generationView || !generatedView || !myApisView || !marketplaceView) {
+        if (!loginView || !dashboardView || !recordingView || !generationView || !generatedView || !myApisView) {
             console.error('[ForgeFlow] required views missing');
             return;
         }
@@ -129,7 +121,6 @@ const popupApp = {
                 generation: generationView,
                 generated: generatedView,
                 myApis: myApisView,
-                marketplace: marketplaceView,
                 subscription: document.getElementById('subscription-view'),
                 settings: document.getElementById('settings-view'),
                 profile: document.getElementById('profile-view')
@@ -175,7 +166,6 @@ const popupApp = {
             generationView.hidden = true;
             generatedView.hidden = true;
             myApisView.hidden = true;
-            marketplaceView.hidden = true;
         };
 
         const showRecording = () => {
@@ -760,243 +750,16 @@ const popupApp = {
             }
         };
 
-        const showMarketplace = () => {
-            showView('marketplace');
-            // TODO: Connect the marketplace screen to backend marketplace data later.
-            loadMarketplaceItems();
+        // The Marketplace has outgrown the 390px popup — browsing, search,
+        // filters, and future features (Subscriptions, Payments, Creator
+        // Dashboard) all need real room. The popup stays a lightweight
+        // launcher and opens the dedicated Marketplace page as its own tab,
+        // the same way any other extension page is opened.
+        const openMarketplaceTab = () => {
+            const marketplaceUrl = chrome.runtime.getURL("marketplace/marketplace.html");
+            chrome.tabs.create({ url: marketplaceUrl });
         };
 
-        let marketplaceItems = [];
-        let activeCategory = 'all';
-
-        const renderMarketplace = (items) => {
-            if (!marketplaceList) return;
-            if (!items || items.length === 0) {
-                marketplaceList.innerHTML = '<p class="empty-state">No marketplace items found.</p>';
-                return;
-            }
-
-            marketplaceList.innerHTML = '';
-            items.forEach((it) => {
-                const card = document.createElement('article');
-                card.className = 'market-card';
-                card.dataset.id = it.id;
-                card.innerHTML = `
-                    <div class="market-card-top">
-                        <div>
-                            <h4>${escapeHtml(it.name)}</h4>
-                            <p>${escapeHtml(it.description || '')}</p>
-                        </div>
-                        <span class="market-price">${it.price && it.price > 0 ? '$' + it.price : 'Free'}</span>
-                    </div>
-                    <div class="market-meta">
-                        <span>${escapeHtml(it.version || '')}</span>
-                        <span>${escapeHtml(it.publisher || '')}</span>
-                    </div>
-                `;
-
-                card.addEventListener('click', () => openMarketModal(it));
-                marketplaceList.appendChild(card);
-            });
-        };
-
-        const applyMarketplaceFilters = () => {
-            const q = (marketplaceSearch && marketplaceSearch.value || '').trim().toLowerCase();
-            const filter = (marketplaceFilter && marketplaceFilter.value) || 'all';
-            const sort = (marketplaceSort && marketplaceSort.value) || 'newest';
-
-            let result = (marketplaceItems || []).slice();
-            if (q) {
-                result = result.filter(i => (i.name + ' ' + (i.description||'')).toLowerCase().includes(q));
-            }
-            if (filter === 'free') result = result.filter(i => !!i.free);
-            if (filter === 'paid') result = result.filter(i => !i.free);
-
-            if (activeCategory && activeCategory !== 'all') {
-                result = result.filter(i => (i.category || 'all') === activeCategory);
-            }
-
-            if (sort === 'price-asc') result.sort((a,b)=> (a.price||0)-(b.price||0));
-            if (sort === 'price-desc') result.sort((a,b)=> (b.price||0)-(a.price||0));
-            if (sort === 'newest') result.sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
-
-            renderMarketplace(result);
-        };
-
-        const loadMarketplaceItems = async () => {
-            try {
-                const { ok, data } = await fetchJson('http://localhost:5000/marketplace');
-                if (!ok) {
-                    console.warn('[ForgeFlow] failed to load marketplace items', data);
-                    marketplaceItems = [];
-                    applyMarketplaceFilters();
-                    return;
-                }
-                marketplaceItems = data || [];
-                applyMarketplaceFilters();
-            } catch (err) {
-                console.error('[ForgeFlow] loadMarketplaceItems error', err);
-                marketplaceItems = [];
-                applyMarketplaceFilters();
-            }
-        };
-
-        const updateMarketplaceListingPrice = (newPrice) => {
-            const listingCard = document.querySelector('.market-card--listing');
-            const priceLine = listingCard?.querySelector('p');
-            if (!listingCard || !priceLine) return;
-
-            priceLine.textContent = newPrice > 0
-                ? `Original purchase price: $10 • Selling price: $${newPrice}`
-                : 'Original purchase price: $10 • Selling price: Free';
-        };
-
-        const handleEditPriceButton = () => {
-            const listingCard = document.querySelector('.market-card--listing');
-            const priceLine = listingCard?.querySelector('p');
-            const currentPriceMatch = priceLine?.textContent?.match(/Selling price: \$(\d+)/);
-            const currentPrice = currentPriceMatch ? Number(currentPriceMatch[1]) : 15;
-            const val = prompt('Enter new price (0 for Free):', String(currentPrice));
-            if (val === null) return;
-
-            const num = Number(val);
-            if (Number.isNaN(num) || num < 0) {
-                alert('Please enter a valid non-negative number for price.');
-                return;
-            }
-
-            updateMarketplaceListingPrice(num);
-            alert('Listing price updated.');
-        };
-
-        const handleRemoveListingButton = () => {
-            if (!confirm('Remove this listing from the marketplace? This will not delete your API.')) return;
-
-            const listingCard = document.querySelector('.market-card--listing');
-            if (listingCard) {
-                listingCard.remove();
-            }
-
-            alert('Listing removed.');
-        };
-
-        const openMarketModal = (item) => {
-            const overlay = document.createElement('div');
-            overlay.className = 'modal-overlay';
-            overlay.style.position = 'fixed';
-            overlay.style.inset = 0;
-            overlay.style.background = 'rgba(0,0,0,0.5)';
-            overlay.style.display = 'flex';
-            overlay.style.alignItems = 'center';
-            overlay.style.justifyContent = 'center';
-            overlay.style.zIndex = 1000;
-
-            const modal = document.createElement('div');
-            modal.className = 'modal';
-            modal.style.background = '#fff';
-            modal.style.borderRadius = '6px';
-            modal.style.padding = '16px';
-            modal.style.maxWidth = '700px';
-            modal.style.width = '100%';
-            modal.innerHTML = `
-                <h3>${escapeHtml(item.name)}</h3>
-                <div class="modal-scroll-body">
-                    <p>${escapeHtml(item.description || '')}</p>
-                    <p><strong>Method:</strong> ${escapeHtml(item.method || '')} • <strong>Version:</strong> ${escapeHtml(item.version || '')}</p>
-                    <p><strong>Creator:</strong> ${escapeHtml(item.publisher || '')} • <strong>Price:</strong> <span id="market-price-${item.id}">${item.price && item.price>0? '$'+item.price : 'Free'}</span></p>
-                    <p><strong>Published:</strong> ${formatRelativeDate(item.createdAt)}</p>
-                </div>
-                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
-                    <button class="btn btn-secondary edit-price">Edit Price</button>
-                    <button class="btn btn-secondary remove-listing">Remove Listing</button>
-                    <button class="btn btn-primary market-buy">Buy</button>
-                    <button class="btn btn-secondary modal-close">Close</button>
-                </div>
-            `;
-
-            overlay.appendChild(modal);
-            document.body.appendChild(overlay);
-            overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
-            overlay.querySelector('.market-buy').addEventListener('click', () => {
-                alert('Purchase flow is not implemented in this demo.');
-            });
-
-            // Edit Price handler
-            const editBtn = overlay.querySelector('.edit-price');
-            editBtn.addEventListener('click', async () => {
-                const val = prompt('Enter new price (0 for Free):', String(typeof item.price !== 'undefined' ? item.price : '0'));
-                if (val === null) return; // cancelled
-                const num = Number(val);
-                if (Number.isNaN(num) || num < 0) {
-                    alert('Please enter a valid non-negative number for price.');
-                    return;
-                }
-
-                try {
-                    const resp = await fetch(`http://localhost:5000/marketplace/${item.id}`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ price: num })
-                    });
-
-                    if (resp.ok) {
-                        const res = await resp.json().catch(() => ({}));
-                        // Update local list and UI
-                        const idx = marketplaceItems.findIndex(m => m.id === item.id);
-                        if (idx !== -1) {
-                            marketplaceItems[idx].price = num;
-                            marketplaceItems[idx].free = num === 0;
-                        }
-                        const priceSpan = document.getElementById(`market-price-${item.id}`);
-                        if (priceSpan) priceSpan.textContent = num > 0 ? '$' + num : 'Free';
-                        applyMarketplaceFilters();
-                        alert('Price updated.');
-                    } else {
-                        const d = await resp.json().catch(() => ({}));
-                        alert(d.message || 'Failed to update price.');
-                    }
-                } catch (err) {
-                    console.error('[ForgeFlow] update price failed', err);
-                    // Fallback to local update
-                    const idx = marketplaceItems.findIndex(m => m.id === item.id);
-                    if (idx !== -1) {
-                        marketplaceItems[idx].price = num;
-                        marketplaceItems[idx].free = num === 0;
-                    }
-                    const priceSpan = document.getElementById(`market-price-${item.id}`);
-                    if (priceSpan) priceSpan.textContent = num > 0 ? '$' + num : 'Free';
-                    applyMarketplaceFilters();
-                    alert('Price updated locally (backend unavailable).');
-                }
-            });
-
-            // Remove Listing handler
-            const removeBtn = overlay.querySelector('.remove-listing');
-            removeBtn.addEventListener('click', async () => {
-                if (!confirm('Remove this listing from the marketplace? This will not delete your API.')) return;
-                try {
-                    const resp = await fetch(`http://localhost:5000/marketplace/${item.id}`, { method: 'DELETE' });
-                    if (resp.ok) {
-                        // Remove from local list and UI
-                        marketplaceItems = (marketplaceItems || []).filter(m => m.id !== item.id);
-                        applyMarketplaceFilters();
-                        overlay.remove();
-                    } else {
-                        const d = await resp.json().catch(() => ({}));
-                        alert(d.message || 'Failed to remove listing.');
-                    }
-                } catch (err) {
-                    console.error('[ForgeFlow] remove listing failed', err);
-                    // Fallback: remove locally
-                    marketplaceItems = (marketplaceItems || []).filter(m => m.id !== item.id);
-                    applyMarketplaceFilters();
-                    overlay.remove();
-                    alert('Listing removed locally (backend unavailable).');
-                }
-            });
-
-            overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-        };
 
         const defaultWorkflowName = () => `Workflow - ${new Date().toLocaleString()}`;
 
@@ -1536,7 +1299,7 @@ const popupApp = {
 
         if (navHome) navHome.addEventListener('click', navigateToDashboard);
         if (navApis) navApis.addEventListener('click', showMyApis);
-        if (navMarketplace) navMarketplace.addEventListener('click', showMarketplace);
+        if (navMarketplace) navMarketplace.addEventListener('click', openMarketplaceTab);
         if (navProfile) navProfile.addEventListener('click', () => showView('profile'));
 
         if (backToDashboardFromSubscriptionButton) backToDashboardFromSubscriptionButton.addEventListener('click', showDashboard);
@@ -1552,64 +1315,13 @@ const popupApp = {
         });
 
         if (marketplaceCard) {
-            marketplaceCard.addEventListener('click', showMarketplace);
+            marketplaceCard.addEventListener('click', openMarketplaceTab);
             marketplaceCard.addEventListener('keydown', (event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
-                    showMarketplace();
+                    openMarketplaceTab();
                 }
             });
-        }
-
-        if (marketplaceSearch) {
-            marketplaceSearch.addEventListener('input', () => applyMarketplaceFilters());
-        }
-
-        if (marketplaceFilter) {
-            marketplaceFilter.addEventListener('change', () => applyMarketplaceFilters());
-        }
-
-        if (marketplaceSort) {
-            marketplaceSort.addEventListener('change', () => applyMarketplaceFilters());
-        }
-
-        if (marketplaceView) {
-            marketplaceView.addEventListener('click', (event) => {
-                const target = event.target;
-                if (!(target instanceof HTMLElement)) return;
-
-                if (target.closest('#edit-price-btn')) {
-                    event.preventDefault();
-                    handleEditPriceButton();
-                }
-
-                if (target.closest('#remove-listing-btn')) {
-                    event.preventDefault();
-                    handleRemoveListingButton();
-                }
-            });
-        }
-
-        // Category chips
-        const categoryChips = document.querySelectorAll('.chip-row .chip');
-        if (categoryChips && categoryChips.length) {
-            categoryChips.forEach((chip) => {
-                chip.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    const cat = chip.dataset ? (chip.dataset.category || 'all') : 'all';
-                    activeCategory = cat;
-                    // Visual highlight
-                    categoryChips.forEach(c => c.classList.remove('active'));
-                    chip.classList.add('active');
-                    // Also sync the filter select if applicable
-                    if (marketplaceFilter) marketplaceFilter.value = 'all';
-                    applyMarketplaceFilters();
-                });
-            });
-        }
-
-        if (backToDashboardFromMarketplaceButton) {
-            backToDashboardFromMarketplaceButton.addEventListener('click', showDashboard);
         }
 
         // TODO: Add future marketplace backend integration, ownership verification, publishing, resale, and payment gateway hooks here.
