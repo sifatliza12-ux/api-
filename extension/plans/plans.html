@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ForgeFlow — Plans &amp; Pricing</title>
+    <link rel="stylesheet" href="plans.css">
+    <link rel="stylesheet" href="../shared/nav.css">
+</head>
+<body>
+    <div class="page-shell">
+        <header class="topbar">
+            <div class="brand-group">
+                <div class="brand-mark" aria-hidden="true">FF</div>
+                <div class="brand-copy">
+                    <p class="eyebrow">ForgeFlow</p>
+                    <h1>Plans &amp; Pricing</h1>
+                </div>
+            </div>
+            <div class="topbar-actions">
+                <p class="topbar-subtitle">A browser automation marketplace — not a traditional subscription product.</p>
+            </div>
+        </header>
+
+        <nav class="app-nav" id="app-nav" aria-label="Primary navigation"></nav>
+
+        <main class="page-content">
+            <section class="usage-section" aria-label="Your usage">
+                <div class="section-heading">
+                    <h2>Your Usage</h2>
+                    <span class="badge badge-free" id="plan-pill">Free Plan</span>
+                </div>
+
+                <div class="usage-grid">
+                    <article class="usage-card">
+                        <div class="usage-card-top">
+                            <span class="usage-label">API Generations Remaining</span>
+                            <span class="usage-value" id="usage-generations-value">— / —</span>
+                        </div>
+                        <div class="progress-track" role="progressbar" aria-label="API generations remaining" aria-valuemin="0" aria-valuemax="100" id="usage-generations-bar">
+                            <div class="progress-fill" id="usage-generations-fill" style="width: 0%"></div>
+                        </div>
+                    </article>
+
+                    <article class="usage-card">
+                        <div class="usage-card-top">
+                            <span class="usage-label">Free API Runs Remaining</span>
+                            <span class="usage-value" id="usage-runs-value">— / —</span>
+                        </div>
+                        <div class="progress-track" role="progressbar" aria-label="Free API runs remaining" aria-valuemin="0" aria-valuemax="100" id="usage-runs-bar">
+                            <div class="progress-fill" id="usage-runs-fill" style="width: 0%"></div>
+                        </div>
+                    </article>
+                </div>
+
+                <p class="usage-note" id="usage-note" hidden></p>
+
+                <div class="model-split-banner">
+                    <div class="model-split-item">
+                        <span class="badge badge-paid">Creating APIs</span>
+                        <p>Generating new APIs and running your own APIs are limited by your plan.</p>
+                    </div>
+                    <div class="model-split-item">
+                        <span class="badge badge-free">Purchasing APIs</span>
+                        <p>Browsing, viewing details, purchasing, installing, and running Marketplace APIs are always available — on every plan.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="plans-section" aria-label="Available plans">
+                <div class="section-heading">
+                    <h2>Choose Your Plan</h2>
+                </div>
+
+                <div class="plans-grid">
+                    <article class="plan-card plan-card--current">
+                        <div class="plan-card-top">
+                            <h3>Free Plan</h3>
+                            <span class="badge badge-free">Current Plan</span>
+                        </div>
+                        <p class="plan-price">
+                            <span class="plan-price-amount">$0</span>
+                            <span class="plan-price-period">/ forever</span>
+                        </p>
+
+                        <div class="plan-feature-group">
+                            <div class="plan-feature-group-heading">
+                                <span>Creating APIs</span>
+                                <span class="badge badge-paid">Limited</span>
+                            </div>
+                            <ul class="plan-feature-list">
+                                <li>Generate up to 2 APIs</li>
+                                <li>2 Free API Runs</li>
+                            </ul>
+                        </div>
+
+                        <div class="plan-feature-group">
+                            <div class="plan-feature-group-heading">
+                                <span>Marketplace Access</span>
+                                <span class="badge badge-free">Always Free</span>
+                            </div>
+                            <ul class="plan-feature-list">
+                                <li>Browse the Marketplace</li>
+                                <li>View API details</li>
+                                <li>Purchase Marketplace APIs</li>
+                                <li>Install &amp; run purchased APIs</li>
+                            </ul>
+                        </div>
+                    </article>
+
+                    <article class="plan-card plan-card--pro">
+                        <div class="plan-card-top">
+                            <h3>Pro Plan</h3>
+                            <span class="badge badge-enterprise">Coming Soon</span>
+                        </div>
+                        <p class="plan-price">
+                            <span class="plan-price-amount">TBA</span>
+                            <span class="plan-price-period">pricing announced at launch</span>
+                        </p>
+                        <ul class="plan-feature-list">
+                            <li>Unlimited API generations</li>
+                            <li>Unlimited API runs</li>
+                            <li>Priority workflow processing</li>
+                            <li>Reduced Marketplace fees</li>
+                            <li>Everything in Free</li>
+                        </ul>
+                        <button type="button" class="btn btn-primary plan-upgrade-btn" id="upgrade-btn">Upgrade</button>
+                    </article>
+                </div>
+            </section>
+
+            <section class="pricing-model-section" aria-label="How Marketplace pricing works">
+                <div class="section-heading">
+                    <h2>How Marketplace Pricing Works</h2>
+                </div>
+                <p class="pricing-model-copy">Marketplace APIs are priced according to workflow complexity. Simpler automations cost less, while advanced workflows require more processing and therefore have higher prices.</p>
+
+                <div class="complexity-grid">
+                    <article class="complexity-card">
+                        <span class="badge badge-complexity-simple">Simple</span>
+                        <h4>Simple Automation</h4>
+                        <p>Search, navigation, basic automation.</p>
+                        <p class="complexity-price">$1 – $5</p>
+                    </article>
+                    <article class="complexity-card">
+                        <span class="badge badge-complexity-medium">Medium</span>
+                        <h4>Medium Automation</h4>
+                        <p>Login, forms, multi-step workflows.</p>
+                        <p class="complexity-price">$5 – $10</p>
+                    </article>
+                    <article class="complexity-card">
+                        <span class="badge badge-complexity-complex">Complex</span>
+                        <h4>Complex Automation</h4>
+                        <p>Long workflows, multi-page automation, advanced browser automation, business processes.</p>
+                        <p class="complexity-price">$10 – $20+</p>
+                    </article>
+                    <article class="complexity-card">
+                        <span class="badge badge-complexity-enterprise">Enterprise</span>
+                        <h4>Enterprise Automation</h4>
+                        <p>Mission-critical automations built for high-value business processes.</p>
+                        <p class="complexity-price">$20+</p>
+                    </article>
+                </div>
+            </section>
+
+            <p class="footer-note">Marketplace purchases and Pro plan billing will be available in a future milestone.</p>
+        </main>
+    </div>
+
+    <script src="../shared/nav.js"></script>
+    <script src="plans.js"></script>
+</body>
+</html>

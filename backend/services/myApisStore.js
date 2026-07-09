@@ -30,6 +30,7 @@ const insertStmt = db.prepare(`
 `);
 const getByIdStmt = db.prepare('SELECT * FROM my_apis WHERE id = ?');
 const listByOwnerStmt = db.prepare('SELECT * FROM my_apis WHERE owner_id = ? ORDER BY created_at DESC');
+const countByOwnerStmt = db.prepare('SELECT COUNT(*) AS count FROM my_apis WHERE owner_id = ?');
 const deleteByIdStmt = db.prepare('DELETE FROM my_apis WHERE id = ?');
 const setPublishedStmt = db.prepare('UPDATE my_apis SET published = ?, updated_at = ? WHERE id = ?');
 
@@ -58,6 +59,8 @@ const getById = (id) => rowToMyApi(getByIdStmt.get(Number(id))) || null;
 
 const listByOwner = (ownerId) => listByOwnerStmt.all(ownerId).map(rowToMyApi);
 
+const countByOwner = (ownerId) => countByOwnerStmt.get(ownerId).count;
+
 const deleteById = (id) => {
   const info = deleteByIdStmt.run(Number(id));
   return info.changes > 0;
@@ -71,4 +74,4 @@ const setPublished = (id, published) => {
   return getById(id);
 };
 
-module.exports = { create, getById, listByOwner, deleteById, setPublished };
+module.exports = { create, getById, listByOwner, countByOwner, deleteById, setPublished };

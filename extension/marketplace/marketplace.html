@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ForgeFlow — Marketplace</title>
     <link rel="stylesheet" href="marketplace.css">
+    <link rel="stylesheet" href="../shared/nav.css">
 </head>
 <body>
     <div class="page-shell">
@@ -17,10 +18,12 @@
                 </div>
             </div>
             <div class="topbar-actions">
-                <p class="topbar-subtitle">Discover, publish, and monetize reusable workflow APIs.</p>
+                <p class="topbar-subtitle">Browsing and purchasing are free on every plan — only creating new APIs counts against your plan.</p>
                 <button type="button" id="refresh-btn" class="btn btn-secondary" aria-label="Refresh marketplace listings">Refresh</button>
             </div>
         </header>
+
+        <nav class="app-nav" id="app-nav" aria-label="Primary navigation"></nav>
 
         <main class="page-content">
             <section class="toolbar" aria-label="Marketplace search and filters">
@@ -79,36 +82,19 @@
                 <div id="marketplace-list" class="marketplace-grid"></div>
             </section>
 
-            <section class="marketplace-section" aria-label="Your published APIs">
+            <section class="marketplace-section" id="my-purchases-section" aria-label="Your purchased APIs" hidden>
                 <div class="section-heading">
-                    <h2>My Published APIs</h2>
+                    <h2>My Purchased APIs</h2>
+                    <span class="result-count" id="my-purchases-count"></span>
                 </div>
-                <div class="marketplace-grid marketplace-grid--listings">
-                    <article class="market-card market-card--listing">
-                        <div class="market-card-top">
-                            <div class="market-card-heading">
-                                <h3>Student Record API</h3>
-                                <p class="listing-price-line">Original purchase price: $10 • Selling price: $15</p>
-                            </div>
-                            <span class="listing-badge">Listed for Sale</span>
-                        </div>
-                        <div class="market-meta">
-                            <span>Status: Listed</span>
-                            <span>Owner: You</span>
-                        </div>
-                        <div class="listing-actions">
-                            <button type="button" id="edit-price-btn" class="btn btn-secondary" aria-label="Edit listing price">Edit Price</button>
-                            <button type="button" id="remove-listing-btn" class="btn btn-secondary" aria-label="Remove listing">Remove Listing</button>
-                        </div>
-                        <p class="listing-note">Users can list their generated APIs for sale or adjust their selling price.</p>
-                    </article>
-                </div>
+                <div id="my-purchases-grid" class="marketplace-grid"></div>
             </section>
 
-            <p class="footer-note">Marketplace purchases and publishing will be available in a future milestone.</p>
+            <p class="footer-note">Real payment processing is coming soon — purchases are simulated for now, but ownership, your library, and Run API already work.</p>
         </main>
     </div>
 
+    <script src="../shared/nav.js"></script>
     <script src="marketplace.js"></script>
 </body>
 </html>

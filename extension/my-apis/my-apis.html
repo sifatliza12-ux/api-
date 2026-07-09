@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ForgeFlow — My APIs</title>
+    <link rel="stylesheet" href="my-apis.css">
+    <link rel="stylesheet" href="../shared/nav.css">
+</head>
+<body>
+    <div class="page-shell">
+        <header class="topbar">
+            <div class="brand-group">
+                <div class="brand-mark" aria-hidden="true">FF</div>
+                <div class="brand-copy">
+                    <p class="eyebrow">ForgeFlow</p>
+                    <h1 id="page-title">My APIs</h1>
+                </div>
+            </div>
+            <div class="topbar-actions">
+                <p class="topbar-subtitle" id="page-subtitle">Every workflow you've generated, ready to run or publish.</p>
+                <button type="button" id="refresh-btn" class="btn btn-secondary" aria-label="Refresh your APIs">Refresh</button>
+            </div>
+        </header>
+
+        <nav class="app-nav" id="app-nav" aria-label="Primary navigation"></nav>
+
+        <main class="page-content">
+            <p class="usage-note" id="auth-note" hidden></p>
+
+            <section class="toolbar" aria-label="Search and status filter">
+                <label class="search-field" for="my-apis-search">
+                    <span class="search-icon" aria-hidden="true">⌕</span>
+                    <input type="text" id="my-apis-search" placeholder="Search your APIs by name or endpoint..." aria-label="Search your APIs">
+                </label>
+
+                <div class="chip-row" id="status-filter-chips" aria-label="Filter by status">
+                    <button type="button" class="chip" data-status="all">All</button>
+                    <button type="button" class="chip" data-status="published">Published</button>
+                    <button type="button" class="chip" data-status="draft">Drafts</button>
+                </div>
+            </section>
+
+            <section class="stats-grid" aria-label="API statistics">
+                <article class="stat-card">
+                    <span class="stat-label">Total APIs</span>
+                    <strong id="stat-total">0</strong>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">Published</span>
+                    <strong id="stat-published">0</strong>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">Drafts</span>
+                    <strong id="stat-drafts">0</strong>
+                </article>
+            </section>
+
+            <section class="marketplace-section" aria-label="Your API collection">
+                <div class="section-heading">
+                    <h2 id="section-heading-title">Your APIs</h2>
+                    <span class="result-count" id="result-count"></span>
+                </div>
+                <div id="my-apis-grid" class="marketplace-grid"></div>
+            </section>
+
+            <p class="footer-note">Looking to buy an API instead of building one? Marketplace purchases are always available, regardless of your plan.</p>
+        </main>
+    </div>
+
+    <script src="../shared/nav.js"></script>
+    <script src="my-apis.js"></script>
+</body>
+</html>

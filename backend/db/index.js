@@ -72,6 +72,21 @@ db.exec(`
     updated_at TEXT
   );
 
+  -- Purchase records are what turn a listing from "Purchase" into "Run API"
+  -- for a given buyer. price_paid is captured at purchase time (not read
+  -- live off the listing later) so a creator changing their price afterward
+  -- can't rewrite what a past buyer already paid. Simulated for now (no real
+  -- payment gateway yet) but the shape is exactly what a real purchase would
+  -- need to record.
+  CREATE TABLE IF NOT EXISTS marketplace_purchases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    listing_id INTEGER NOT NULL REFERENCES marketplace_listings(id) ON DELETE CASCADE,
+    buyer_id INTEGER NOT NULL REFERENCES users(id),
+    price_paid REAL NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    UNIQUE(listing_id, buyer_id)
+  );
+
   CREATE TABLE IF NOT EXISTS replay_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
@@ -116,5 +131,9 @@ const addColumnIfMissing = (table, columnDefinition) => {
 addColumnIfMissing('replay_runs', 'step_log TEXT');
 addColumnIfMissing('replay_runs', 'extraction_method TEXT');
 addColumnIfMissing('workflows', 'extraction_hint TEXT');
+// Lets a purchased/owned marketplace listing actually be run (Run API) —
+// previously listings only carried enough to display a card, not enough to
+// call the underlying workflow.
+addColumnIfMissing('marketplace_listings', 'endpoint TEXT');
 
 module.exports = db;

@@ -12,6 +12,7 @@ const insertStmt = db.prepare(`
   INSERT INTO replay_runs (workflow_id, triggered_by_user_id, is_test, success, message, final_url, final_title, skipped_steps, step_log, extraction_method, created_at)
   VALUES (@workflowId, @triggeredByUserId, @isTest, @success, @message, @finalUrl, @finalTitle, @skippedSteps, @stepLog, @extractionMethod, @createdAt)
 `);
+const countByUserStmt = db.prepare('SELECT COUNT(*) AS count FROM replay_runs WHERE triggered_by_user_id = ?');
 
 const logRun = ({ workflowId, triggeredByUserId, isTest, success, message, finalUrl, finalTitle, skippedSteps, stepLog, extractionMethod }) => {
   insertStmt.run({
@@ -33,4 +34,9 @@ const logRun = ({ workflowId, triggeredByUserId, isTest, success, message, final
   });
 };
 
-module.exports = { logRun };
+// Counts every run this user has triggered (test runs on their own APIs and
+// real Run API calls alike) — the simplest honest "usage" number available
+// today, since no separate per-purchase run-tracking exists yet.
+const countByUser = (userId) => countByUserStmt.get(userId).count;
+
+module.exports = { logRun, countByUser };

@@ -1,6 +1,14 @@
 /**
  * popup.js
- * Handles the premium popup interactions for ForgeFlow.
+ * ForgeFlow's popup is now a lightweight control panel, not the main
+ * application — login/session handling stays here, but Marketplace, My
+ * APIs, Plans & Pricing, and Settings all live in the Dashboard tab
+ * (extension/dashboard/) and the other app pages it links to. The popup's
+ * own job is just: recording status, a Start/Stop toggle, and a way to open
+ * the Dashboard. Recording itself talks directly to the background service
+ * worker over the same message API the Dashboard uses, so starting a
+ * recording here and stopping it from the Dashboard (or vice versa) both
+ * work correctly.
  */
 
 const popupApp = {
@@ -9,10 +17,6 @@ const popupApp = {
         const loginView = document.getElementById('login-view');
         const signupView = document.getElementById('signup-view');
         const dashboardView = document.getElementById('dashboard-view');
-        const recordingView = document.getElementById('recording-view');
-        const generationView = document.getElementById('generation-view');
-        const generatedView = document.getElementById('generated-view');
-        const myApisView = document.getElementById('my-apis-view');
 
         const loginButton = document.getElementById('login-btn');
         const trialButton = document.getElementById('trial-btn');
@@ -20,45 +24,17 @@ const popupApp = {
         const showLoginButton = document.getElementById('show-login-btn');
         const signupButton = document.getElementById('signup-btn');
         const logoutButton = document.getElementById('logout-btn');
-        const startRecordingButton = document.getElementById('start-recording-btn');
-        const backToDashboardButton = document.getElementById('back-to-dashboard-btn');
-        const recordStartButton = document.getElementById('record-start-btn');
-        const recordPauseButton = document.getElementById('record-pause-btn');
-        const recordStopButton = document.getElementById('record-stop-btn');
-        const recordCancelButton = document.getElementById('record-cancel-btn');
-        const copyEndpointButton = document.getElementById('copy-endpoint-btn');
-        const downloadApiButton = document.getElementById('download-api-btn');
-        const publishMarketplaceButton = document.getElementById('publish-marketplace-btn');
-        const backToDashboardGeneratedButton = document.getElementById('back-to-dashboard-generated-btn');
-        const myApisCard = document.getElementById('my-apis-card');
-        const backToDashboardFromMyApisButton = document.getElementById('back-to-dashboard-from-my-apis-btn');
-        const subscriptionCard = document.getElementById('subscription-card');
-        const settingsCard = document.getElementById('settings-card');
-        const backToDashboardFromSubscriptionButton = document.getElementById('back-to-dashboard-from-subscription-btn');
-        const backToDashboardFromSettingsButton = document.getElementById('back-to-dashboard-from-settings-btn');
-        const backToDashboardFromProfileButton = document.getElementById('back-to-dashboard-from-profile-btn');
-        const navHome = document.getElementById('nav-home');
-        const navApis = document.getElementById('nav-apis');
-        const navMarketplace = document.getElementById('nav-marketplace');
-        const navProfile = document.getElementById('nav-profile');
-        const marketplaceCard = document.getElementById('marketplace-card');
+        const popupRecordIndicator = document.getElementById('popup-record-indicator');
+        const popupRecordStatus = document.getElementById('popup-record-status');
+        const popupRecordToggleBtn = document.getElementById('popup-record-toggle-btn');
+        const openDashboardButton = document.getElementById('open-dashboard-btn');
 
-        if (!loginView || !dashboardView || !recordingView || !generationView || !generatedView || !myApisView) {
+        if (!loginView || !dashboardView) {
             console.error('[ForgeFlow] required views missing');
             return;
         }
 
-        console.log('[ForgeFlow] popup init', {
-            startRecordingButton: !!startRecordingButton,
-            recordStartButton: !!recordStartButton,
-            recordPauseButton: !!recordPauseButton,
-            recordStopButton: !!recordStopButton,
-            recordCancelButton: !!recordCancelButton
-        });
-
-        let generationTimeoutId = null;
         let loginErrorMessage = null;
-        let lastGeneratedApi = null;
 
         const AUTH_BASE_URL = 'http://localhost:5000/api/auth';
         const AUTH_STORAGE_KEY = 'forgeflow.auth';
@@ -99,44 +75,11 @@ const popupApp = {
             }
         };
 
-        // Workflows/My APIs are now owned per-user and their routes require
-        // a valid token — every fetch to those endpoints needs this attached.
-        const authHeaders = async () => {
-            const session = await getAuthSession();
-            return session?.token ? { Authorization: `Bearer ${session.token}` } : {};
-        };
-
-        const clearGenerationTimeout = () => {
-            if (generationTimeoutId) {
-                window.clearTimeout(generationTimeoutId);
-                generationTimeoutId = null;
-            }
-        };
-
-        const showView = (viewName) => {
-            const views = {
-                login: loginView,
-                dashboard: dashboardView,
-                recording: recordingView,
-                generation: generationView,
-                generated: generatedView,
-                myApis: myApisView,
-                subscription: document.getElementById('subscription-view'),
-                settings: document.getElementById('settings-view'),
-                profile: document.getElementById('profile-view')
-            };
-
-            clearGenerationTimeout();
-
-            Object.entries(views).forEach(([name, view]) => {
-                view.hidden = name !== viewName;
-            });
-        };
-
         const navigateToDashboard = () => {
             loginView.hidden = true;
             signupView.hidden = true;
             dashboardView.hidden = false;
+            void refreshRecordingState();
         };
 
         // Alias used by various back buttons in the DOM
@@ -158,608 +101,13 @@ const popupApp = {
             loginView.hidden = false;
         };
 
-        const navigateToRecording = () => {
-            clearGenerationTimeout();
-            loginView.hidden = true;
-            dashboardView.hidden = true;
-            recordingView.hidden = false;
-            generationView.hidden = true;
-            generatedView.hidden = true;
-            myApisView.hidden = true;
+        // Same launcher pattern Marketplace/Plans/My APIs/Settings already
+        // used before they moved out of the popup entirely — the Dashboard
+        // is now the one remaining destination the popup opens.
+        const openDashboardTab = () => {
+            const dashboardUrl = chrome.runtime.getURL('dashboard/dashboard.html');
+            chrome.tabs.create({ url: dashboardUrl });
         };
-
-        const showRecording = () => {
-            navigateToRecording();
-            console.log('[ForgeFlow] showRecording executed');
-            void updateRecordingView();
-        };
-
-        const showGenerating = () => {
-            showView('generation');
-            // TODO: Hook this screen up to the real workflow analysis pipeline later.
-        };
-
-        const showGenerated = () => {
-            showView('generated');
-            // Persist the generated API metadata when the backend is available.
-            // Create a record on the backend so it appears under My APIs.
-            (async () => {
-                try {
-                    const payload = {
-                        name: 'User Workflow API',
-                        version: 'v1.0',
-                        method: 'POST',
-                        endpoint: '/api/v1/workflow',
-                        generatedCode: '// Example generated code for User Workflow API',
-                        published: false
-                    };
-
-                    const resp = await fetch('http://localhost:5000/api/my-apis', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-                        body: JSON.stringify(payload)
-                    });
-
-                    if (resp.ok) {
-                        lastGeneratedApi = await resp.json().catch(() => null);
-                        // Also persist locally for offline support
-                        try {
-                            if (lastGeneratedApi) addLocalApi(lastGeneratedApi);
-                        } catch (e) { /* ignore */ }
-                    } else {
-                        console.warn('[ForgeFlow] failed to save generated API', resp.status);
-                        // Fallback: save locally so it appears in My APIs
-                        try {
-                            const localApi = Object.assign({}, payload, { id: Date.now(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-                            addLocalApi(localApi);
-                            lastGeneratedApi = localApi;
-                        } catch (e) { /* ignore */ }
-                    }
-                } catch (err) {
-                    console.error('[ForgeFlow] error saving generated API', err);
-                    // Fallback: save locally so it appears in My APIs
-                    try {
-                        const localApi = Object.assign({}, payload, { id: Date.now(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-                        addLocalApi(localApi);
-                        lastGeneratedApi = localApi;
-                    } catch (e) { /* ignore */ }
-                }
-            })();
-        };
-
-        const showMyApis = () => {
-            showView('myApis');
-            // Load generated APIs from backend
-            loadMyApis();
-        };
-
-        const fetchJson = async (url, opts = {}) => {
-            const response = await fetch(url, opts);
-            const data = await response.json().catch(() => ({}));
-            return { ok: response.ok, status: response.status, data };
-        };
-
-        const LOCAL_KEY = 'forgeflow_my_apis';
-
-        const getLocalApis = () => {
-            try {
-                const raw = localStorage.getItem(LOCAL_KEY);
-                return raw ? JSON.parse(raw) : [];
-            } catch (e) {
-                return [];
-            }
-        };
-
-        const saveLocalApis = (arr) => {
-            try {
-                localStorage.setItem(LOCAL_KEY, JSON.stringify(arr || []));
-            } catch (e) {
-                console.warn('[ForgeFlow] unable to save local apis', e);
-            }
-        };
-
-        const addLocalApi = (api) => {
-            const arr = getLocalApis();
-            arr.unshift(api);
-            saveLocalApis(arr);
-        };
-
-        const toggleLocalPublished = (id, flag) => {
-            const arr = getLocalApis();
-            const idx = arr.findIndex(a => a.id === id);
-            if (idx !== -1) {
-                arr[idx].published = flag;
-                arr[idx].updatedAt = new Date().toISOString();
-                saveLocalApis(arr);
-            }
-        };
-
-        const myApisSection = myApisView.querySelector('.my-apis-section');
-        const statsCards = myApisView.querySelectorAll('.stat-card--compact strong');
-
-        const updateStats = (apis) => {
-            const total = apis.length;
-            const published = apis.filter(a => a.published).length;
-            const drafts = total - published;
-
-            if (statsCards && statsCards.length >= 3) {
-                statsCards[0].textContent = String(total);
-                statsCards[1].textContent = String(published);
-                statsCards[2].textContent = String(drafts);
-            }
-        };
-
-        const renderEmptyState = () => {
-            myApisSection.innerHTML = `
-                <div class="empty-state">
-                    <h3>No APIs generated yet.</h3>
-                    <p>Create a workflow and generate an API to see it here.</p>
-                    <div style="margin-top:12px"><button id="generate-first-api-btn" class="btn btn-primary">Generate your first API</button></div>
-                </div>
-            `;
-            const genBtn = document.getElementById('generate-first-api-btn');
-            if (genBtn) genBtn.addEventListener('click', () => showRecording());
-        };
-
-        const renderApis = (apis) => {
-            if (!myApisSection) return;
-            if (!apis || apis.length === 0) {
-                updateStats([]);
-                renderEmptyState();
-                return;
-            }
-
-            updateStats(apis);
-
-            myApisSection.innerHTML = '';
-
-            apis.forEach((api) => {
-                const article = document.createElement('article');
-                article.className = 'api-card';
-                article.dataset.id = api.id;
-
-                const statusClass = api.published ? 'status-badge--published' : (api.status === 'Draft' ? 'status-badge--draft' : 'status-badge--active');
-                const statusText = api.published ? 'Published' : (api.status || 'Draft');
-
-                article.innerHTML = `
-                    <div class="api-card-top">
-                        <div>
-                            <h3>${escapeHtml(api.name)}</h3>
-                            <p class="api-meta-line">${escapeHtml(api.method)} • ${escapeHtml(api.version || '')} • ${formatRelativeDate(api.createdAt)}</p>
-                        </div>
-                        <span class="status-badge ${statusClass}">${statusText}</span>
-                    </div>
-                    <div class="api-details">
-                        <span>Endpoint: ${escapeHtml(api.endpoint)}</span>
-                        <span>Last Updated: ${formatRelativeDate(api.updatedAt)}</span>
-                    </div>
-                    <div class="api-actions">
-                        <button type="button" class="btn btn-secondary api-action-btn view-api-btn">View API</button>
-                        <button type="button" class="btn btn-secondary api-action-btn copy-endpoint-btn" data-original-text="Copy Endpoint">Copy Endpoint</button>
-                                <button type="button" class="btn btn-secondary api-action-btn publish-api-btn">${api.published ? 'Unpublish' : 'Publish to Marketplace'}</button>
-                                <button type="button" class="btn btn-secondary api-action-btn download-api-card-btn">Download API</button>
-                                <button type="button" class="btn btn-danger api-action-btn delete-api-btn">Delete</button>
-                    </div>
-                `;
-
-                myApisSection.appendChild(article);
-
-                // Attach handlers
-                const viewBtn = article.querySelector('.view-api-btn');
-                const copyBtn = article.querySelector('.copy-endpoint-btn');
-                const publishBtn = article.querySelector('.publish-api-btn');
-                const deleteBtn = article.querySelector('.delete-api-btn');
-
-                viewBtn.addEventListener('click', () => openApiModal(api));
-
-                copyBtn.addEventListener('click', async () => {
-                    try {
-                        await navigator.clipboard.writeText(api.endpoint || '');
-                        const original = copyBtn.dataset.originalText || 'Copy Endpoint';
-                        copyBtn.textContent = 'Copied!';
-                        copyBtn.classList.add('is-copied');
-                        setTimeout(() => {
-                            copyBtn.textContent = original;
-                            copyBtn.classList.remove('is-copied');
-                        }, 1200);
-                    } catch (err) {
-                        console.error('[ForgeFlow] copy failed', err);
-                        alert('Unable to copy endpoint.');
-                    }
-                });
-
-                // Publish or Unpublish handler
-                publishBtn.addEventListener('click', async () => {
-                    const willPublish = !api.published;
-                    publishBtn.disabled = true;
-                    publishBtn.textContent = willPublish ? 'Publishing...' : 'Unpublishing...';
-                    try {
-                        if (willPublish) {
-                            // Publish to marketplace first
-                            const mp = await fetch('http://localhost:5000/marketplace/publish', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    name: api.name,
-                                    version: api.version,
-                                    method: api.method,
-                                    endpoint: api.endpoint,
-                                    price: api.price || 10,
-                                    publisher: 'Demo User'
-                                })
-                            });
-
-                            const mpData = await mp.json().catch(() => ({}));
-                            if (!mp.ok) {
-                                alert(mpData.message || 'Publishing to marketplace failed.');
-                                publishBtn.disabled = false;
-                                publishBtn.textContent = willPublish ? 'Publish to Marketplace' : 'Unpublish';
-                                return;
-                            }
-                        }
-
-                        // Toggle published state in our store (backend preferred)
-                        const mark = await fetch(`http://localhost:5000/api/my-apis/${api.id}/publish`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-                            body: JSON.stringify({ published: willPublish })
-                        });
-
-                        if (!mark.ok) {
-                            // Fallback: try to update localStorage if backend unavailable
-                            const d = await mark.json().catch(() => ({}));
-                            console.warn('[ForgeFlow] failed to toggle publish state', d);
-                            // update local storage fallback
-                            toggleLocalPublished(api.id, willPublish);
-                        }
-
-                        // Refresh UI
-                        loadMyApis();
-                    } catch (err) {
-                        console.error('[ForgeFlow] publish toggle failed', err);
-                        alert('Unable to change publish state.');
-                        publishBtn.disabled = false;
-                        publishBtn.textContent = api.published ? 'Unpublish' : 'Publish to Marketplace';
-                    }
-                });
-
-                // Download API from card
-                const downloadCardBtn = article.querySelector('.download-api-card-btn');
-                if (downloadCardBtn) {
-                    downloadCardBtn.addEventListener('click', async () => {
-                        try {
-                            const content = api.generatedCode || JSON.stringify({ name: api.name, endpoint: api.endpoint, method: api.method, version: api.version }, null, 2);
-                            const blob = new Blob([content], { type: 'application/json' });
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `${(api.name || 'api').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-api.json`;
-                            document.body.appendChild(a);
-                            a.click();
-                            a.remove();
-                            setTimeout(() => URL.revokeObjectURL(url), 100);
-                        } catch (err) {
-                            console.error('[ForgeFlow] download card api failed', err);
-                            alert('Unable to download API.');
-                        }
-                    });
-                }
-
-                deleteBtn.addEventListener('click', async () => {
-                    if (!confirm('Delete this API? This action cannot be undone.')) return;
-                    try {
-                        const resp = await fetch(`http://localhost:5000/api/my-apis/${api.id}`, { method: 'DELETE', headers: await authHeaders() });
-                        if (resp.ok) {
-                            article.remove();
-                            // update stats
-                            loadMyApis();
-                        } else {
-                            // Fallback to local removal
-                            const d = await resp.json().catch(() => ({}));
-                            console.warn('[ForgeFlow] delete failed on server', d);
-                            const locals = getLocalApis().filter(a => a.id !== api.id);
-                            saveLocalApis(locals);
-                            article.remove();
-                            loadMyApis();
-                        }
-                    } catch (err) {
-                        console.error('[ForgeFlow] delete failed', err);
-                        // Fallback: remove from local storage
-                        try {
-                            const locals = getLocalApis().filter(a => a.id !== api.id);
-                            saveLocalApis(locals);
-                            article.remove();
-                            loadMyApis();
-                        } catch (e) {
-                            console.error('[ForgeFlow] local delete failed', e);
-                            alert('Unable to delete API.');
-                        }
-                    }
-                });
-            });
-        };
-
-        const loadMyApis = async () => {
-            try {
-                const { ok, data } = await fetchJson('http://localhost:5000/api/my-apis', { headers: await authHeaders() });
-                if (!ok) {
-                    console.warn('[ForgeFlow] failed to load My APIs', data);
-                    const local = getLocalApis();
-                    if (!local || local.length === 0) {
-                        renderEmptyState();
-                    } else {
-                        renderApis(local);
-                    }
-                    return;
-                }
-                // Merge any locally-saved APIs that are not present on the server
-                try {
-                    const local = getLocalApis();
-                    const merged = (data || []).slice();
-                    (local || []).forEach((l) => {
-                        if (!merged.find(m => m.id === l.id)) merged.unshift(l);
-                    });
-                    renderApis(merged);
-                } catch (e) {
-                    renderApis(data || []);
-                }
-            } catch (err) {
-                console.error('[ForgeFlow] loadMyApis error', err);
-                const local = getLocalApis();
-                if (!local || local.length === 0) {
-                    renderEmptyState();
-                } else {
-                    renderApis(local);
-                }
-            }
-        };
-
-        // One editable field per extracted parameter, pre-filled with the
-        // value captured while recording — this is what lets the owner's
-        // own Run API click use different values than the recording
-        // without needing to know the raw POST body shape. Every field
-        // carries data-param-name/data-param-type so collectParameterValues
-        // can read them back into the right JS type generically, for
-        // whatever parameters THIS workflow happens to have — no
-        // per-workflow or per-site-specific field handling.
-        const buildParamFieldHtml = (param) => {
-            const inputId = `param-input-${param.name}`;
-            const safeName = escapeHtml(param.name);
-
-            if (param.type === 'boolean') {
-                const checked = param.defaultValue ? 'checked' : '';
-                return `
-                    <div class="param-field">
-                        <label class="param-field-checkbox-row" for="${inputId}">
-                            <input type="checkbox" id="${inputId}" data-param-name="${safeName}" data-param-type="boolean" ${checked}>
-                            <span class="param-field-label">${escapeHtml(param.label)}</span>
-                        </label>
-                        ${param.description ? `<p class="param-field-description">${escapeHtml(param.description)}</p>` : ''}
-                    </div>
-                `;
-            }
-
-            const inputType = param.type === 'number' ? 'number' : (param.type === 'date' ? 'date' : 'text');
-            const value = escapeHtml(String(param.defaultValue ?? ''));
-
-            return `
-                <div class="param-field">
-                    <label class="param-field-label" for="${inputId}">${escapeHtml(param.label)}</label>
-                    <input type="${inputType}" id="${inputId}" class="param-field-input" data-param-name="${safeName}" data-param-type="${param.type || 'text'}" value="${value}">
-                    ${param.description ? `<p class="param-field-description">${escapeHtml(param.description)}</p>` : ''}
-                </div>
-            `;
-        };
-
-        // Reads the current (possibly edited) value out of each rendered
-        // field, converting back to the JS type the backend expects —
-        // generic across whatever parameter set a given workflow has.
-        const collectParameterValues = (modal) => {
-            const values = {};
-            modal.querySelectorAll('[data-param-name]').forEach((input) => {
-                const name = input.dataset.paramName;
-                const type = input.dataset.paramType;
-                if (type === 'boolean') {
-                    values[name] = input.checked;
-                } else if (type === 'number') {
-                    values[name] = input.value === '' ? null : Number(input.value);
-                } else {
-                    values[name] = input.value;
-                }
-            });
-            return values;
-        };
-
-        // "hotel_name" / "hotelName" -> "Hotel Name" — keys are whatever the
-        // backend's extraction pipeline settled on (see
-        // backend/services/extraction/semanticNaming.js), so this only needs
-        // to handle snake_case and camelCase, not arbitrary strings.
-        const prettifyFieldName = (key) => String(key)
-            .replace(/_/g, ' ')
-            .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-            .replace(/\b\w/g, (c) => c.toUpperCase());
-
-        const formatDuration = (ms) => {
-            if (typeof ms !== 'number' || Number.isNaN(ms)) return '';
-            return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
-        };
-
-        const buildResultCardsHtml = (items) => items.map((item) => {
-            const rows = Object.entries(item || {}).map(([key, value]) => `
-                <div class="result-row">
-                    <span class="result-row-label">${escapeHtml(prettifyFieldName(key))}</span>
-                    <span class="result-row-value">${escapeHtml(value === null || value === undefined || value === '' ? '—' : String(value))}</span>
-                </div>
-            `).join('');
-            return `<div class="result-card">${rows}</div>`;
-        }).join('');
-
-        const buildParamsUsedHtml = (parametersApplied) => {
-            const entries = Object.entries(parametersApplied || {});
-            if (!entries.length) return '';
-            const parts = entries.map(([key, value]) => (
-                `${escapeHtml(key)} = ${escapeHtml(value === null || value === undefined || value === '' ? '—' : String(value))}`
-            ));
-            return `<p class="run-params-used">Ran with: ${parts.join(', ')}</p>`;
-        };
-
-        // Builds the full success-state body: status line, what parameters
-        // were actually used, the extracted results (or an explicit "found
-        // nothing" note — never raw JSON by default), and a collapsed raw
-        // response for anyone who does want it. See requirements 1-4 of the
-        // run-results feature.
-        const buildRunResultHtml = (data) => {
-            const durationSuffix = data.execution && typeof data.execution.durationMs === 'number'
-                ? ` in ${formatDuration(data.execution.durationMs)}`
-                : '';
-            const statusLine = `<p class="run-status">✓ ${escapeHtml(data.message || 'Run succeeded.')}${durationSuffix}</p>`;
-            const paramsLine = buildParamsUsedHtml(data.parametersApplied);
-
-            const items = Array.isArray(data.data) ? data.data : [];
-            const resultsHtml = items.length
-                ? `<div class="result-cards">${buildResultCardsHtml(items)}</div>`
-                : '<p class="run-empty-note">Workflow ran successfully, but no results were extracted from the final page.</p>';
-
-            const rawToggle = `
-                <details class="raw-response-toggle">
-                    <summary>View raw response</summary>
-                    <pre class="raw-response-pre">${escapeHtml(JSON.stringify(data, null, 2))}</pre>
-                </details>
-            `;
-
-            return `${statusLine}${paramsLine}${resultsHtml}${rawToggle}`;
-        };
-
-        const openApiModal = (api) => {
-            const parameters = Array.isArray(api.parameters) ? api.parameters : [];
-
-            // Create a simple modal showing API details and generated code
-            const overlay = document.createElement('div');
-            overlay.className = 'modal-overlay';
-            overlay.style.position = 'fixed';
-            overlay.style.inset = 0;
-            overlay.style.background = 'rgba(0,0,0,0.5)';
-            overlay.style.display = 'flex';
-            overlay.style.alignItems = 'center';
-            overlay.style.justifyContent = 'center';
-            overlay.style.zIndex = 1000;
-
-            const modal = document.createElement('div');
-            modal.className = 'modal';
-            modal.style.background = '#fff';
-            modal.style.borderRadius = '6px';
-            modal.style.padding = '16px';
-            modal.style.maxWidth = '600px';
-            modal.style.width = '100%';
-
-            const paramsHtml = parameters.length
-                ? `
-                    <h4>Parameters</h4>
-                    <p class="param-field-hint">Pre-filled with the values captured while recording — edit any of them before running.</p>
-                    ${parameters.map(buildParamFieldHtml).join('')}
-                `
-                : '';
-
-            modal.innerHTML = `
-                <h3>${escapeHtml(api.name)}</h3>
-                <div class="modal-scroll-body">
-                    <p><strong>Endpoint:</strong> ${escapeHtml(api.endpoint)}</p>
-                    <p><strong>Method:</strong> ${escapeHtml(api.method)}</p>
-                    <p><strong>Version:</strong> ${escapeHtml(api.version || '')}</p>
-                    <pre style="background:#f6f8fa;padding:8px;border-radius:4px;max-height:240px;overflow:auto">${escapeHtml(api.generatedCode || '')}</pre>
-                    ${paramsHtml}
-                    <div class="run-result" style="margin-top:10px;font-size:13px;display:none"></div>
-                </div>
-                <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
-                    <button class="btn btn-primary modal-run-api">Run API</button>
-                    <button class="btn btn-secondary modal-close">Close</button>
-                </div>
-            `;
-
-            overlay.appendChild(modal);
-            document.body.appendChild(overlay);
-
-            overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
-            overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-
-            const runBtn = overlay.querySelector('.modal-run-api');
-            const resultEl = overlay.querySelector('.run-result');
-
-            runBtn.addEventListener('click', async () => {
-                runBtn.disabled = true;
-                runBtn.textContent = 'Running…';
-                resultEl.style.display = 'none';
-                resultEl.className = 'run-result';
-                resultEl.innerHTML = '';
-
-                try {
-                    // Whatever is currently in the fields — pre-filled with
-                    // recorded defaults, but the user may have edited any of
-                    // them. The backend falls back to its own stored default
-                    // for any parameter not present in the body, so this is
-                    // safe to send even for a workflow with no parameters.
-                    const body = collectParameterValues(modal);
-                    const response = await fetch(`http://localhost:5000${api.endpoint}`, {
-                        method: api.method || 'POST',
-                        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-                        body: JSON.stringify(body)
-                    });
-                    const data = await response.json().catch(() => ({}));
-
-                    if (response.ok && data.success) {
-                        resultEl.classList.add('run-result--success');
-                        resultEl.innerHTML = buildRunResultHtml(data);
-                    } else {
-                        resultEl.classList.add('run-result--error');
-                        resultEl.textContent = `✗ ${data.message || `Run failed (HTTP ${response.status}).`}`;
-                    }
-                } catch (err) {
-                    resultEl.classList.add('run-result--error');
-                    resultEl.textContent = `✗ Could not reach the backend: ${err.message}`;
-                } finally {
-                    resultEl.style.display = 'block';
-                    runBtn.disabled = false;
-                    runBtn.textContent = 'Run API';
-                }
-            });
-        };
-
-        const escapeHtml = (str) => {
-            if (!str) return '';
-            return String(str)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        };
-
-        const formatRelativeDate = (iso) => {
-            if (!iso) return 'Unknown';
-            try {
-                const d = new Date(iso);
-                const diff = Date.now() - d.getTime();
-                const mins = Math.floor(diff / 60000);
-                if (mins < 60) return `${mins}m ago`;
-                const hours = Math.floor(mins / 60);
-                if (hours < 24) return `${hours}h ago`;
-                const days = Math.floor(hours / 24);
-                return `${days}d ago`;
-            } catch (e) {
-                return 'Unknown';
-            }
-        };
-
-        // The Marketplace has outgrown the 390px popup — browsing, search,
-        // filters, and future features (Subscriptions, Payments, Creator
-        // Dashboard) all need real room. The popup stays a lightweight
-        // launcher and opens the dedicated Marketplace page as its own tab,
-        // the same way any other extension page is opened.
-        const openMarketplaceTab = () => {
-            const marketplaceUrl = chrome.runtime.getURL("marketplace/marketplace.html");
-            chrome.tabs.create({ url: marketplaceUrl });
-        };
-
 
         const defaultWorkflowName = () => `Workflow - ${new Date().toLocaleString()}`;
 
@@ -774,153 +122,63 @@ const popupApp = {
             });
         });
 
-        const updateRecordingView = async () => {
-            try {
-                const response = await sendRuntimeMessage({ type: 'get-recorder-state' });
-                const state = response?.state || {};
-                const isRecording = Boolean(state.isRecording);
-                const statusValue = recordingView.querySelector('.status-value');
-                const indicator = recordingView.querySelector('.recording-indicator');
-                const metrics = recordingView.querySelectorAll('.metric-item strong');
-                const activityText = recordingView.querySelector('.activity-log p');
+        const updatePopupRecordingUI = (state) => {
+            const isRecording = Boolean(state?.isRecording);
 
-                if (statusValue) {
-                    statusValue.textContent = isRecording ? 'Recording Active' : 'Ready to Record';
-                }
-
-                if (indicator) {
-                    indicator.classList.toggle('is-recording', isRecording);
-                }
-
-                if (metrics[0]) {
-                    metrics[0].textContent = String(state.events?.length || 0);
-                }
-
-                if (metrics[1]) {
-                    metrics[1].textContent = isRecording ? 'Live' : '00:00';
-                }
-
-                if (activityText) {
-                    activityText.textContent = isRecording
-                        ? `${state.events?.length || 0} event(s) captured. Continue browsing to keep recording.`
-                        : 'No activity yet.';
-                }
-
-                if (recordStartButton) {
-                    recordStartButton.disabled = isRecording;
-                }
-
-                if (recordStopButton) {
-                    recordStopButton.disabled = !isRecording;
-                }
-
-                if (recordPauseButton) {
-                    recordPauseButton.disabled = !isRecording;
-                }
-            } catch (error) {
-                console.error('[ForgeFlow][popup] unable to refresh recording view', error);
+            if (popupRecordIndicator) {
+                popupRecordIndicator.classList.toggle('is-recording', isRecording);
+            }
+            if (popupRecordStatus) {
+                popupRecordStatus.textContent = isRecording ? 'Recording…' : 'Not Recording';
+            }
+            if (popupRecordToggleBtn) {
+                popupRecordToggleBtn.textContent = isRecording ? 'Stop Recording' : 'Start Recording';
+                popupRecordToggleBtn.classList.toggle('is-recording', isRecording);
             }
         };
 
-        const startRecordingSession = async () => {
-            console.log('[ForgeFlow][popup] start recording requested');
-            const response = await sendRuntimeMessage({ type: 'start-recording', source: 'popup' });
-            if (response?.ok) {
-                await updateRecordingView();
-                return true;
+        const refreshRecordingState = async () => {
+            try {
+                const response = await sendRuntimeMessage({ type: 'get-recorder-state' });
+                updatePopupRecordingUI(response?.state);
+            } catch (error) {
+                console.error('[ForgeFlow][popup] unable to refresh recording state', error);
             }
-
-            console.error('[ForgeFlow][popup] failed to start recording', response);
-            return false;
         };
 
         const handleStartRecording = async () => {
-            await startRecordingSession();
-            showRecording();
+            console.log('[ForgeFlow][popup] start recording requested');
+            if (popupRecordToggleBtn) popupRecordToggleBtn.disabled = true;
+            const response = await sendRuntimeMessage({ type: 'start-recording', source: 'popup' });
+            if (popupRecordToggleBtn) popupRecordToggleBtn.disabled = false;
+            if (!response?.ok) {
+                console.error('[ForgeFlow][popup] failed to start recording', response);
+            }
+            updatePopupRecordingUI(response?.state);
         };
 
         const handleStopRecording = async () => {
             const input = window.prompt('Name this workflow:', defaultWorkflowName());
             const name = (input || '').trim() || defaultWorkflowName();
 
+            if (popupRecordToggleBtn) popupRecordToggleBtn.disabled = true;
             const response = await sendRuntimeMessage({ type: 'stop-recording', source: 'popup', save: true, name });
-            if (response?.ok) {
-                await updateRecordingView();
-            }
+            if (popupRecordToggleBtn) popupRecordToggleBtn.disabled = false;
+            updatePopupRecordingUI(response?.state);
 
             if (response?.save?.ok) {
-                alert('Saved! View in My APIs.');
+                alert('Workflow saved! Open the Dashboard to see it under My APIs.');
             } else if (response?.save) {
                 alert(`Could not save workflow: ${response.save.error || 'Unknown error'}`);
             }
-
-            showRecording();
         };
 
-        const handleCancelRecording = async () => {
-            await sendRuntimeMessage({ type: 'stop-recording', source: 'popup' });
-            navigateToDashboard();
-        };
-
-        const handleCopyEndpoint = (eventOrButton = copyEndpointButton) => {
-            const targetButton = eventOrButton && typeof eventOrButton === 'object' && 'currentTarget' in eventOrButton
-                ? eventOrButton.currentTarget
-                : eventOrButton || copyEndpointButton;
-
-            if (!targetButton || !(targetButton instanceof HTMLElement)) {
-                return;
-            }
-
-            const originalText = targetButton.dataset ? (targetButton.dataset.originalText || 'Copy Endpoint') : 'Copy Endpoint';
-            targetButton.textContent = 'Copied!';
-            targetButton.classList.add('is-copied');
-
-            window.setTimeout(() => {
-                targetButton.textContent = originalText;
-                targetButton.classList.remove('is-copied');
-            }, 1200);
-
-            // TODO: Replace this visual-only feedback with actual clipboard integration.
-        };
-
-        const handleDownloadApi = async () => {
-            // Generates a sample API JSON file and triggers a download.
-            // TODO: Support downloading real generated APIs from the backend (fetch and auth).
-            try {
-                const payload = {
-                    name: 'User Workflow API',
-                    version: '1.0.0',
-                    method: 'POST',
-                    endpoint: '/api/v1/workflow',
-                    generatedBy: 'ForgeFlow',
-                    createdAt: new Date().toISOString()
-                };
-
-                const json = JSON.stringify(payload, null, 2);
-                const blob = new Blob([json], { type: 'application/json' });
-                const objectUrl = URL.createObjectURL(blob);
-
-                try {
-                    const anchor = document.createElement('a');
-                    anchor.href = objectUrl;
-                    anchor.download = 'workflow-api.json';
-                    // Append to DOM to make the click work in all browsers
-                    document.body.appendChild(anchor);
-                    anchor.click();
-                    anchor.remove();
-                } finally {
-                    // Revoke the object URL shortly after the download starts
-                    setTimeout(() => URL.revokeObjectURL(objectUrl), 100);
-                }
-            } catch (err) {
-                console.error('[ForgeFlow] download API failed', err);
-                // Friendly user-facing error only on failure
-                try {
-                    alert('Unable to download the API file. Please try again.');
-                } catch (e) {
-                    // If alert is not available, silently fail (UI shouldn't break)
-                    console.error('[ForgeFlow] alert failed', e);
-                }
+        const handleToggleRecording = async () => {
+            const response = await sendRuntimeMessage({ type: 'get-recorder-state' });
+            if (response?.state?.isRecording) {
+                await handleStopRecording();
+            } else {
+                await handleStartRecording();
             }
         };
 
@@ -1126,11 +384,6 @@ const popupApp = {
             }
         };
 
-        const handlePlaceholderAction = (label) => {
-            console.info(`${label} button pressed (placeholder only).`);
-            // TODO: Connect this placeholder to the real API action later.
-        };
-
         if (loginButton) {
             loginButton.addEventListener('click', handleLogin);
         } else {
@@ -1157,174 +410,15 @@ const popupApp = {
             logoutButton.addEventListener('click', handleLogout);
         }
 
-        if (startRecordingButton) {
-            startRecordingButton.addEventListener('click', async () => {
-                console.log('[Recorder] Start clicked');
-                console.log('[ForgeFlow][popup] Start Recording button clicked');
-                await handleStartRecording();
-            });
+        if (popupRecordToggleBtn) {
+            popupRecordToggleBtn.addEventListener('click', handleToggleRecording);
         }
 
-        if (backToDashboardButton) {
-            backToDashboardButton.addEventListener('click', navigateToDashboard);
+        if (openDashboardButton) {
+            openDashboardButton.addEventListener('click', openDashboardTab);
         }
 
-        if (recordStartButton) {
-            recordStartButton.addEventListener('click', async () => {
-                console.log('[Recorder] Record start clicked');
-                console.log('[ForgeFlow][popup] Record Start button clicked');
-                await handleStartRecording();
-            });
-        }
-
-        if (recordStopButton) {
-            recordStopButton.addEventListener('click', async () => {
-                console.log('[Recorder] Record stop clicked');
-                console.log('[ForgeFlow][popup] Stop Recording button clicked');
-                await handleStopRecording();
-            });
-        }
-
-        if (recordCancelButton) {
-            recordCancelButton.addEventListener('click', async () => {
-                console.log('[Recorder] Record cancel clicked');
-                console.log('[ForgeFlow][popup] Cancel Recording button clicked');
-                await handleCancelRecording();
-            });
-        }
-
-        void updateRecordingView();
-
-        if (copyEndpointButton) {
-            copyEndpointButton.addEventListener('click', handleCopyEndpoint);
-        }
-
-        if (downloadApiButton) {
-            downloadApiButton.addEventListener('click', handleDownloadApi);
-        }
-
-        const handlePublishMarketplace = async () => {
-            // TODO: Replace sample payload with real API metadata and include authentication headers.
-            if (!publishMarketplaceButton) return;
-
-            const originalText = publishMarketplaceButton.dataset ? (publishMarketplaceButton.dataset.originalText || publishMarketplaceButton.textContent) : publishMarketplaceButton.textContent;
-
-            try {
-                publishMarketplaceButton.disabled = true;
-                publishMarketplaceButton.textContent = 'Publishing...';
-
-                const payload = {
-                    name: 'User Workflow API',
-                    version: '1.0.0',
-                    method: 'POST',
-                    endpoint: '/api/v1/workflow',
-                    price: 10,
-                    publisher: 'Demo User'
-                };
-
-                const response = await fetch('http://localhost:5000/marketplace/publish', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
-                });
-
-                const data = await response.json().catch(() => ({}));
-
-                if (response.ok) {
-                    try {
-                        alert('API published successfully.');
-                    } catch (e) {
-                        console.log('[ForgeFlow] publish success (alert failed)');
-                    }
-                } else {
-                    const msg = data.message || 'Publishing failed. Please try again.';
-                    try {
-                        alert(msg);
-                    } catch (e) {
-                        console.error('[ForgeFlow] publish error', msg);
-                    }
-                }
-            } catch (err) {
-                console.error('[ForgeFlow] publish to marketplace failed', err);
-                try {
-                    alert('Unable to publish the API. Please try again.');
-                } catch (e) {
-                    console.error('[ForgeFlow] alert failed', e);
-                }
-            } finally {
-                publishMarketplaceButton.disabled = false;
-                publishMarketplaceButton.textContent = originalText;
-            }
-        };
-
-        if (publishMarketplaceButton) {
-            publishMarketplaceButton.addEventListener('click', handlePublishMarketplace);
-        }
-
-        if (backToDashboardGeneratedButton) {
-            backToDashboardGeneratedButton.addEventListener('click', showDashboard);
-        }
-
-        if (myApisCard) {
-            myApisCard.addEventListener('click', showMyApis);
-            myApisCard.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    showMyApis();
-                }
-            });
-        }
-
-        if (subscriptionCard) {
-            subscriptionCard.addEventListener('click', () => showView('subscription'));
-            subscriptionCard.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    showView('subscription');
-                }
-            });
-        }
-
-        if (settingsCard) {
-            settingsCard.addEventListener('click', () => showView('settings'));
-            settingsCard.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    showView('settings');
-                }
-            });
-        }
-
-        if (navHome) navHome.addEventListener('click', navigateToDashboard);
-        if (navApis) navApis.addEventListener('click', showMyApis);
-        if (navMarketplace) navMarketplace.addEventListener('click', openMarketplaceTab);
-        if (navProfile) navProfile.addEventListener('click', () => showView('profile'));
-
-        if (backToDashboardFromSubscriptionButton) backToDashboardFromSubscriptionButton.addEventListener('click', showDashboard);
-        if (backToDashboardFromSettingsButton) backToDashboardFromSettingsButton.addEventListener('click', showDashboard);
-        if (backToDashboardFromProfileButton) backToDashboardFromProfileButton.addEventListener('click', showDashboard);
-
-        if (backToDashboardFromMyApisButton) {
-            backToDashboardFromMyApisButton.addEventListener('click', showDashboard);
-        }
-
-        document.querySelectorAll('.copy-endpoint-btn').forEach((button) => {
-            button.addEventListener('click', () => handleCopyEndpoint(button));
-        });
-
-        if (marketplaceCard) {
-            marketplaceCard.addEventListener('click', openMarketplaceTab);
-            marketplaceCard.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    openMarketplaceTab();
-                }
-            });
-        }
-
-        // TODO: Add future marketplace backend integration, ownership verification, publishing, resale, and payment gateway hooks here.
+        void refreshRecordingState();
 
         // On popup open: if a stored session's token still verifies against
         // the backend, skip straight to the dashboard; otherwise (missing,

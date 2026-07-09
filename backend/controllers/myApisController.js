@@ -86,6 +86,7 @@ const publishMyApi = (req, res) => {
       description: item.description,
       method: item.method,
       version: item.version,
+      endpoint: item.endpoint,
       price: item.price,
       publisher: req.user.name || req.user.email
     });

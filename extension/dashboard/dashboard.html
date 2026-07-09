@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ForgeFlow — Dashboard</title>
+    <link rel="stylesheet" href="dashboard.css">
+    <link rel="stylesheet" href="../shared/nav.css">
+</head>
+<body>
+    <div class="page-shell">
+        <header class="topbar">
+            <div class="brand-group">
+                <div class="brand-mark" aria-hidden="true">FF</div>
+                <div class="brand-copy">
+                    <p class="eyebrow">ForgeFlow</p>
+                    <h1>Dashboard</h1>
+                </div>
+            </div>
+            <div class="topbar-actions">
+                <p class="topbar-subtitle">Your ForgeFlow overview — creating, publishing, and buying automation APIs.</p>
+            </div>
+        </header>
+
+        <nav class="app-nav" id="app-nav" aria-label="Primary navigation"></nav>
+
+        <main class="page-content">
+            <p class="usage-note" id="auth-note" hidden></p>
+
+            <section class="record-banner" id="record-banner" aria-label="Record a new workflow">
+                <div class="record-banner-copy">
+                    <div class="record-status-row">
+                        <span class="record-indicator" id="record-indicator" aria-hidden="true"></span>
+                        <h2 id="record-status-heading">Ready to Record</h2>
+                    </div>
+                    <p id="record-status-text">Start recording, then switch to the tab you want to automate. Come back and stop when you're done — your workflow becomes an API automatically.</p>
+                </div>
+                <button type="button" class="btn btn-primary record-toggle-btn" id="record-toggle-btn">Start Recording</button>
+            </section>
+
+            <section class="model-grid" aria-label="ForgeFlow business model">
+                <article class="model-card">
+                    <div class="model-card-top">
+                        <h2>Creating APIs</h2>
+                        <span class="badge badge-paid">Limited by your plan</span>
+                    </div>
+                    <p class="model-card-copy">Generating new APIs and running your own APIs count against your Free plan's limits.</p>
+                    <div class="usage-grid">
+                        <div class="usage-card">
+                            <div class="usage-card-top">
+                                <span class="usage-label">API Generations Remaining</span>
+                                <span class="usage-value" id="usage-generations-value">— / —</span>
+                            </div>
+                            <div class="progress-track"><div class="progress-fill" id="usage-generations-fill" style="width: 0%"></div></div>
+                        </div>
+                        <div class="usage-card">
+                            <div class="usage-card-top">
+                                <span class="usage-label">Free API Runs Remaining</span>
+                                <span class="usage-value" id="usage-runs-value">— / —</span>
+                            </div>
+                            <div class="progress-track"><div class="progress-fill" id="usage-runs-fill" style="width: 0%"></div></div>
+                        </div>
+                    </div>
+                    <a class="btn btn-secondary model-card-link" href="#" id="my-apis-link">Manage My APIs</a>
+                </article>
+
+                <article class="model-card model-card--marketplace">
+                    <div class="model-card-top">
+                        <h2>Marketplace</h2>
+                        <span class="badge badge-free">Always available</span>
+                    </div>
+                    <p class="model-card-copy">Browsing, viewing details, and purchasing Marketplace APIs are never limited by your plan — every user can buy and run purchased APIs.</p>
+                    <ul class="model-feature-list">
+                        <li>Browse the Marketplace</li>
+                        <li>View API details</li>
+                        <li>Purchase Marketplace APIs</li>
+                        <li>Run purchased APIs any time</li>
+                    </ul>
+                    <a class="btn btn-primary model-card-link" href="#" id="marketplace-link">Browse Marketplace</a>
+                </article>
+            </section>
+
+            <section class="marketplace-section" aria-label="Your API stats">
+                <div class="section-heading">
+                    <h2>Your APIs</h2>
+                    <a href="#" id="view-all-apis-link" class="result-count">View all →</a>
+                </div>
+                <div class="stats-grid">
+                    <article class="stat-card">
+                        <span class="stat-label">Total APIs</span>
+                        <strong id="stat-total">0</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-label">Published</span>
+                        <strong id="stat-published">0</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-label">Drafts</span>
+                        <strong id="stat-drafts">0</strong>
+                    </article>
+                </div>
+                <div id="recent-apis-list" class="recent-apis-list"></div>
+            </section>
+
+            <p class="footer-note">One connected platform — jump between Dashboard, Marketplace, My APIs, Published APIs, Plans &amp; Pricing, and Settings any time using the navigation above.</p>
+        </main>
+    </div>
+
+    <script src="../shared/nav.js"></script>
+    <script src="dashboard.js"></script>
+</body>
+</html>

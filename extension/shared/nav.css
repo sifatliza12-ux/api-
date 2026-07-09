@@ -1,0 +1,62 @@
+/**
+ * Shared persistent navigation bar — included by every ForgeFlow extension
+ * tab page (Dashboard, Marketplace, My APIs, Plans & Pricing, Settings) so
+ * the app feels like one connected platform instead of separate unrelated
+ * pages. Relies on each host page already defining the ForgeFlow palette
+ * CSS variables (--panel, --line, --muted, --text, --accent*); falls back
+ * to the same values if a page doesn't, so it never renders unstyled.
+ */
+
+.app-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-bottom: 24px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+}
+
+.app-nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+    background: var(--panel, rgba(255, 255, 255, 0.05));
+    color: var(--muted, #b8acd0);
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.app-nav-link:hover {
+    transform: translateY(-1px);
+    color: var(--text, #f8f4ff);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.app-nav-link.active {
+    color: var(--text, #f8f4ff);
+    background: rgba(139, 92, 246, 0.24);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.app-nav-icon {
+    font-size: 14px;
+    line-height: 1;
+}
+
+@media (max-width: 640px) {
+    .app-nav {
+        gap: 6px;
+    }
+
+    .app-nav-link {
+        padding: 8px 12px;
+        font-size: 12px;
+    }
+}

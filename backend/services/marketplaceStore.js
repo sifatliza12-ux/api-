@@ -17,6 +17,7 @@ const rowToListing = (row) => row && ({
   description: row.description || '',
   method: row.method,
   version: row.version,
+  endpoint: row.endpoint || '',
   price: row.price,
   publisher: row.publisher,
   free: Boolean(row.free),
@@ -88,12 +89,12 @@ const listAllStmt = db.prepare('SELECT * FROM marketplace_listings ORDER BY crea
 const getByIdStmt = db.prepare('SELECT * FROM marketplace_listings WHERE id = ?');
 const getByMyApiIdStmt = db.prepare('SELECT * FROM marketplace_listings WHERE my_api_id = ?');
 const insertStmt = db.prepare(`
-  INSERT INTO marketplace_listings (my_api_id, owner_id, name, description, method, version, price, publisher, free, category, created_at, updated_at)
-  VALUES (@myApiId, @ownerId, @name, @description, @method, @version, @price, @publisher, @free, @category, @createdAt, @updatedAt)
+  INSERT INTO marketplace_listings (my_api_id, owner_id, name, description, method, version, endpoint, price, publisher, free, category, created_at, updated_at)
+  VALUES (@myApiId, @ownerId, @name, @description, @method, @version, @endpoint, @price, @publisher, @free, @category, @createdAt, @updatedAt)
 `);
 const updateStmt = db.prepare(`
   UPDATE marketplace_listings
-  SET name = @name, description = @description, method = @method, version = @version,
+  SET name = @name, description = @description, method = @method, version = @version, endpoint = @endpoint,
       price = @price, publisher = @publisher, free = @free, updated_at = @updatedAt
   WHERE id = @id
 `);
@@ -107,20 +108,20 @@ const getById = (id) => rowToListing(getByIdStmt.get(Number(id))) || null;
 
 // Publishing an already-published API just updates its existing listing
 // (name/price/etc. may have changed) instead of creating a duplicate.
-const upsertForMyApi = ({ myApiId, ownerId, name, description, method, version, price, publisher }) => {
+const upsertForMyApi = ({ myApiId, ownerId, name, description, method, version, endpoint, price, publisher }) => {
   const existing = getByMyApiIdStmt.get(Number(myApiId));
   const now = new Date().toISOString();
   const free = !price || Number(price) === 0;
 
   if (existing) {
-    updateStmt.run({ id: existing.id, name, description, method, version, price, publisher, free: free ? 1 : 0, updatedAt: now });
+    updateStmt.run({ id: existing.id, name, description, method, version, endpoint: endpoint || '', price, publisher, free: free ? 1 : 0, updatedAt: now });
     return getById(existing.id);
   }
 
   const result = insertStmt.run({
     myApiId: Number(myApiId),
     ownerId: ownerId ?? null,
-    name, description, method, version, price, publisher,
+    name, description, method, version, endpoint: endpoint || '', price, publisher,
     free: free ? 1 : 0,
     category: 'all',
     createdAt: now,
