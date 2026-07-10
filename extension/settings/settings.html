@@ -4,8 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ForgeFlow — Settings</title>
+    <script src="../shared/theme.js"></script>
     <link rel="stylesheet" href="settings.css">
     <link rel="stylesheet" href="../shared/nav.css">
+    <link rel="stylesheet" href="../shared/theme.css">
 </head>
 <body>
     <div class="page-shell">
@@ -18,27 +20,171 @@
                 </div>
             </div>
             <div class="topbar-actions">
-                <p class="topbar-subtitle">Preferences, integrations, and account controls.</p>
+                <p class="topbar-subtitle">Profile, appearance, notifications, and account controls — all in one place.</p>
             </div>
         </header>
 
         <nav class="app-nav" id="app-nav" aria-label="Primary navigation"></nav>
 
         <main class="page-content">
-            <section class="settings-card">
-                <div class="settings-icon" aria-hidden="true">⚙</div>
-                <h2>Settings are coming soon</h2>
-                <p>
-                    Preferences, notification controls, and third-party integrations will live here.
-                    In the meantime, your account, session, and login are managed from the ForgeFlow
-                    extension popup.
-                </p>
-            </section>
+            <p class="usage-note" id="auth-note" hidden></p>
 
-            <p class="footer-note">Have a request for what should live here? It'll be part of a future milestone.</p>
+            <div class="settings-grid">
+                <section class="settings-card" aria-label="Profile">
+                    <div class="settings-card-header">
+                        <span class="settings-card-icon" aria-hidden="true">👤</span>
+                        <h2>Profile</h2>
+                    </div>
+                    <div class="profile-row">
+                        <div class="profile-avatar" id="profile-avatar" aria-hidden="true">U</div>
+                        <div class="profile-fields">
+                            <div class="profile-field">
+                                <span class="profile-field-label">Full Name</span>
+                                <span class="profile-field-value" id="profile-name">—</span>
+                            </div>
+                            <div class="profile-field">
+                                <span class="profile-field-label">Email Address</span>
+                                <span class="profile-field-value" id="profile-email">—</span>
+                            </div>
+                            <div class="profile-field">
+                                <span class="profile-field-label">Username</span>
+                                <span class="profile-field-value" id="profile-username">—</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" id="edit-profile-btn" class="btn btn-secondary">Edit Profile</button>
+                </section>
+
+                <section class="settings-card" aria-label="Appearance">
+                    <div class="settings-card-header">
+                        <span class="settings-card-icon" aria-hidden="true">🎨</span>
+                        <h2>Appearance</h2>
+                    </div>
+                    <p class="settings-card-copy">Choose how ForgeFlow looks. Changes apply immediately, across every ForgeFlow tab.</p>
+                    <div class="theme-toggle-group" id="theme-toggle-group" role="radiogroup" aria-label="Theme">
+                        <button type="button" class="theme-option" data-theme-value="dark" role="radio">
+                            <span aria-hidden="true">🌙</span> Dark Mode
+                        </button>
+                        <button type="button" class="theme-option" data-theme-value="light" role="radio">
+                            <span aria-hidden="true">☀️</span> Light Mode
+                        </button>
+                        <button type="button" class="theme-option" data-theme-value="system" role="radio">
+                            <span aria-hidden="true">🖥️</span> System Default
+                        </button>
+                    </div>
+                </section>
+
+                <section class="settings-card" aria-label="Notifications">
+                    <div class="settings-card-header">
+                        <span class="settings-card-icon" aria-hidden="true">🔔</span>
+                        <h2>Notifications</h2>
+                    </div>
+                    <p class="settings-card-copy">Saved on this device for now.</p>
+                    <div class="toggle-list" id="notifications-list">
+                        <label class="toggle-row">
+                            <span class="toggle-row-label">Marketplace Updates</span>
+                            <span class="switch"><input type="checkbox" data-notif-key="marketplaceUpdates"><span class="switch-track"><span class="switch-thumb"></span></span></span>
+                        </label>
+                        <label class="toggle-row">
+                            <span class="toggle-row-label">API Purchase Notifications</span>
+                            <span class="switch"><input type="checkbox" data-notif-key="apiPurchases"><span class="switch-track"><span class="switch-thumb"></span></span></span>
+                        </label>
+                        <label class="toggle-row">
+                            <span class="toggle-row-label">API Published Notifications</span>
+                            <span class="switch"><input type="checkbox" data-notif-key="apiPublished"><span class="switch-track"><span class="switch-thumb"></span></span></span>
+                        </label>
+                        <label class="toggle-row">
+                            <span class="toggle-row-label">Product Announcements</span>
+                            <span class="switch"><input type="checkbox" data-notif-key="productAnnouncements"><span class="switch-track"><span class="switch-thumb"></span></span></span>
+                        </label>
+                    </div>
+                </section>
+
+                <section class="settings-card" aria-label="Preferences">
+                    <div class="settings-card-header">
+                        <span class="settings-card-icon" aria-hidden="true">⚙️</span>
+                        <h2>Preferences</h2>
+                    </div>
+                    <div class="pref-field">
+                        <label class="pref-field-label" for="pref-landing-page">Default Landing Page</label>
+                        <select id="pref-landing-page" class="pref-select">
+                            <option value="dashboard/dashboard.html">Dashboard</option>
+                            <option value="marketplace/marketplace.html">Marketplace</option>
+                            <option value="my-apis/my-apis.html">My APIs</option>
+                        </select>
+                    </div>
+                    <div class="toggle-list">
+                        <label class="toggle-row">
+                            <span class="toggle-row-label">Auto-open replay browser after API execution</span>
+                            <span class="switch"><input type="checkbox" id="pref-auto-open-replay"><span class="switch-track"><span class="switch-thumb"></span></span></span>
+                        </label>
+                        <label class="toggle-row">
+                            <span class="toggle-row-label">Remember last visited page</span>
+                            <span class="switch"><input type="checkbox" id="pref-remember-last-page"><span class="switch-track"><span class="switch-thumb"></span></span></span>
+                        </label>
+                    </div>
+                </section>
+
+                <section class="settings-card" aria-label="Account">
+                    <div class="settings-card-header">
+                        <span class="settings-card-icon" aria-hidden="true">💳</span>
+                        <h2>Account</h2>
+                    </div>
+                    <div class="account-stat-list">
+                        <div class="account-stat">
+                            <span class="account-stat-label">Current Plan</span>
+                            <strong class="account-stat-value" id="account-plan">—</strong>
+                        </div>
+                        <div class="account-stat">
+                            <span class="account-stat-label">API Generations Remaining</span>
+                            <strong class="account-stat-value" id="account-generations">—</strong>
+                        </div>
+                        <div class="account-stat">
+                            <span class="account-stat-label">Free API Runs Remaining</span>
+                            <strong class="account-stat-value" id="account-runs">—</strong>
+                        </div>
+                    </div>
+                    <button type="button" id="upgrade-plan-btn" class="btn btn-primary">Upgrade Plan</button>
+                </section>
+
+                <section class="settings-card" aria-label="Security">
+                    <div class="settings-card-header">
+                        <span class="settings-card-icon" aria-hidden="true">🔒</span>
+                        <h2>Security</h2>
+                    </div>
+                    <div class="security-actions">
+                        <button type="button" id="change-password-btn" class="btn btn-secondary security-action-btn">Change Password</button>
+                        <button type="button" id="logout-btn" class="btn btn-secondary security-action-btn">Logout</button>
+                        <button type="button" id="delete-account-btn" class="btn btn-danger security-action-btn">Delete Account</button>
+                    </div>
+                </section>
+
+                <section class="settings-card settings-card--about" aria-label="About ForgeFlow">
+                    <div class="settings-card-header">
+                        <span class="settings-card-icon" aria-hidden="true">ℹ️</span>
+                        <h2>About ForgeFlow</h2>
+                    </div>
+                    <div class="about-brand">
+                        <div class="brand-mark" aria-hidden="true">FF</div>
+                        <div>
+                            <p class="about-name">ForgeFlow</p>
+                            <p class="about-version">Version <span id="about-version">—</span> · Build <span id="about-build">—</span></p>
+                        </div>
+                    </div>
+                    <p class="about-description">ForgeFlow transforms browser workflows into reusable APIs without requiring code.</p>
+                    <div class="about-links">
+                        <button type="button" class="link-btn" id="privacy-policy-btn">Privacy Policy</button>
+                        <button type="button" class="link-btn" id="terms-btn">Terms of Service</button>
+                    </div>
+                </section>
+            </div>
+
+            <p class="footer-note">Settings are saved on this device. Profile, notification, and preference syncing across devices is on the roadmap.</p>
         </main>
     </div>
 
     <script src="../shared/nav.js"></script>
+    <script src="../shared/preferences.js"></script>
+    <script src="settings.js"></script>
 </body>
 </html>

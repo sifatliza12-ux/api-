@@ -1,0 +1,32 @@
+/**
+ * Light-mode variable overrides, shared by every ForgeFlow page. Every page
+ * (Dashboard, Marketplace, My APIs, Purchased APIs, Plans, Settings) already
+ * defines the same set of dark-mode CSS custom properties in its own :root
+ * block (--bg-a/b/c, --panel, --panel-strong, --surface-solid, --text,
+ * --muted, --muted-2, --line, --danger); the popup uses a slightly different
+ * set (--bg, --surface, --surface-strong, --shadow). This file only
+ * re-declares those same names under :root[data-theme="light"] — an
+ * attribute selector, so it wins on specificity regardless of load order —
+ * which shared/theme.js sets on <html> before first paint. No page's own
+ * stylesheet needs to change: every rule that already reads var(--text) etc.
+ * picks up the light values automatically.
+ */
+:root[data-theme="light"] {
+    --bg-a: #f6f3ff;
+    --bg-b: #efe9fb;
+    --bg-c: #f8eef6;
+    --panel: rgba(32, 21, 61, 0.045);
+    --panel-strong: rgba(32, 21, 61, 0.08);
+    --surface-solid: #ffffff;
+    --text: #201533;
+    --muted: #5b5170;
+    --muted-2: #6d6384;
+    --line: rgba(32, 21, 61, 0.13);
+    --danger: #d1354a;
+
+    /* Popup-specific variable names */
+    --bg: #f6f3ff;
+    --surface: rgba(32, 21, 61, 0.05);
+    --surface-strong: rgba(32, 21, 61, 0.09);
+    --shadow: 0 24px 50px rgba(32, 21, 61, 0.14);
+}

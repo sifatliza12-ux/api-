@@ -103,9 +103,26 @@ const popupApp = {
 
         // Same launcher pattern Marketplace/Plans/My APIs/Settings already
         // used before they moved out of the popup entirely — the Dashboard
-        // is now the one remaining destination the popup opens.
-        const openDashboardTab = () => {
-            const dashboardUrl = chrome.runtime.getURL('dashboard/dashboard.html');
+        // is now the one remaining destination the popup opens. Where
+        // exactly it opens is driven by Settings > Preferences: "Remember
+        // last visited page" (if on and something was visited) wins,
+        // otherwise it falls back to the configured "Default Landing Page".
+        const openDashboardTab = async () => {
+            let target = 'dashboard/dashboard.html';
+
+            if (window.ForgeFlowPreferences) {
+                try {
+                    const prefs = await window.ForgeFlowPreferences.getPrefs();
+                    const lastPage = prefs.rememberLastPage
+                        ? await window.ForgeFlowPreferences.getLastVisitedPage()
+                        : null;
+                    target = lastPage || prefs.defaultLandingPage || target;
+                } catch (error) {
+                    console.warn('[ForgeFlow][popup] could not read preferences, opening Dashboard', error);
+                }
+            }
+
+            const dashboardUrl = chrome.runtime.getURL(target);
             chrome.tabs.create({ url: dashboardUrl });
         };
 
