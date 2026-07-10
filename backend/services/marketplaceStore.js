@@ -98,7 +98,7 @@ const updateStmt = db.prepare(`
       price = @price, publisher = @publisher, free = @free, updated_at = @updatedAt
   WHERE id = @id
 `);
-const patchStmt = db.prepare('UPDATE marketplace_listings SET price = COALESCE(?, price), category = COALESCE(?, category), updated_at = ? WHERE id = ?');
+const patchStmt = db.prepare('UPDATE marketplace_listings SET name = COALESCE(?, name), description = COALESCE(?, description), price = COALESCE(?, price), free = COALESCE(?, free), category = COALESCE(?, category), updated_at = ? WHERE id = ?');
 const deleteStmt = db.prepare('DELETE FROM marketplace_listings WHERE id = ?');
 const deleteByMyApiIdStmt = db.prepare('DELETE FROM marketplace_listings WHERE my_api_id = ?');
 
@@ -135,8 +135,15 @@ const removeByMyApiId = (myApiId) => {
 };
 
 const update = (id, patch) => {
+  const hasPrice = typeof patch.price !== 'undefined';
   const info = patchStmt.run(
-    typeof patch.price !== 'undefined' ? Number(patch.price) : null,
+    typeof patch.name !== 'undefined' ? String(patch.name) : null,
+    typeof patch.description !== 'undefined' ? String(patch.description) : null,
+    hasPrice ? Number(patch.price) : null,
+    // Keeping `free` in lockstep with price whenever price changes, so a
+    // listing edited down to $0 (or up from it) doesn't keep showing the
+    // stale Free/Premium badge it had before the edit.
+    hasPrice ? (Number(patch.price) === 0 ? 1 : 0) : null,
     typeof patch.category !== 'undefined' ? String(patch.category) : null,
     new Date().toISOString(),
     Number(id)

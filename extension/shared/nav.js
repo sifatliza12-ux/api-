@@ -13,6 +13,7 @@
     const NAV_ITEMS = [
         { key: 'dashboard', label: 'Dashboard', icon: '🏠', path: 'dashboard/dashboard.html' },
         { key: 'marketplace', label: 'Marketplace', icon: '◫', path: 'marketplace/marketplace.html' },
+        { key: 'purchased-apis', label: 'Purchased APIs', icon: '🛒', path: 'purchased-apis/purchased-apis.html' },
         { key: 'my-apis', label: 'My APIs', icon: '✦', path: 'my-apis/my-apis.html' },
         { key: 'published-apis', label: 'Published APIs', icon: '📦', path: 'my-apis/my-apis.html?filter=published' },
         { key: 'plans', label: 'Plans & Pricing', icon: '◎', path: 'plans/plans.html' },

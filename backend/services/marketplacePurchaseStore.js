@@ -12,6 +12,7 @@ const insertStmt = db.prepare(`
 `);
 const getStmt = db.prepare('SELECT * FROM marketplace_purchases WHERE listing_id = ? AND buyer_id = ?');
 const listByBuyerStmt = db.prepare('SELECT listing_id FROM marketplace_purchases WHERE buyer_id = ? ORDER BY created_at DESC');
+const listByBuyerWithDateStmt = db.prepare('SELECT listing_id, created_at FROM marketplace_purchases WHERE buyer_id = ? ORDER BY created_at DESC');
 const countForListingStmt = db.prepare('SELECT COUNT(*) AS count FROM marketplace_purchases WHERE listing_id = ?');
 
 const hasPurchased = (listingId, buyerId) => !!getStmt.get(Number(listingId), Number(buyerId));
@@ -31,6 +32,13 @@ const purchase = ({ listingId, buyerId, pricePaid }) => {
 
 const listPurchasedListingIds = (buyerId) => listByBuyerStmt.all(Number(buyerId)).map((row) => row.listing_id);
 
+// Same purchases as listPurchasedListingIds, but paired with when each one
+// happened — the Purchased APIs page needs a real "Purchase Date" per item,
+// not just the set of owned listing ids.
+const listPurchasesWithDates = (buyerId) => listByBuyerWithDateStmt
+  .all(Number(buyerId))
+  .map((row) => ({ listingId: row.listing_id, purchasedAt: row.created_at }));
+
 const countForListing = (listingId) => countForListingStmt.get(Number(listingId)).count;
 
-module.exports = { hasPurchased, purchase, listPurchasedListingIds, countForListing };
+module.exports = { hasPurchased, purchase, listPurchasedListingIds, listPurchasesWithDates, countForListing };

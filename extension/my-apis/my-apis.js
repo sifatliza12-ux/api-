@@ -77,7 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pageTitle) pageTitle.textContent = isPublishedView ? 'Published APIs' : 'My APIs';
         if (pageSubtitle) {
             pageSubtitle.textContent = isPublishedView
-                ? 'APIs you have published to the Marketplace for others to install.'
+                ? 'APIs you have published to the Marketplace for others to purchase.'
                 : "Every workflow you've generated, ready to run or publish.";
         }
         if (sectionHeadingTitle) sectionHeadingTitle.textContent = isPublishedView ? 'Published APIs' : 'Your APIs';

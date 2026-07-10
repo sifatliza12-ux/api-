@@ -56,12 +56,17 @@ const purchaseMarketplaceItem = (req, res) => {
   }
 };
 
-// "My Purchased APIs" library.
+// "My Purchased APIs" library — powers the dedicated Purchased APIs page,
+// so each item also carries when it was bought (purchasedAt) alongside the
+// listing's own fields (name, description, publisher/creator, etc.).
 const listMyPurchases = (req, res) => {
   try {
-    const purchasedIds = marketplacePurchaseStore.listPurchasedListingIds(req.user.id);
-    const items = purchasedIds
-      .map((id) => marketplaceStore.getById(id))
+    const purchases = marketplacePurchaseStore.listPurchasesWithDates(req.user.id);
+    const items = purchases
+      .map(({ listingId, purchasedAt }) => {
+        const item = marketplaceStore.getById(listingId);
+        return item ? { ...item, purchasedAt } : null;
+      })
       .filter(Boolean);
     return res.json(items);
   } catch (err) {
@@ -90,6 +95,10 @@ const updateMarketplaceItem = (req, res) => {
       if (Number.isNaN(newPrice) || newPrice < 0) {
         return res.status(400).json({ success: false, message: 'Price must be a non-negative number' });
       }
+    }
+
+    if (typeof payload.name !== 'undefined' && !String(payload.name).trim()) {
+      return res.status(400).json({ success: false, message: 'Name cannot be empty' });
     }
 
     const item = marketplaceStore.update(req.params.id, payload);

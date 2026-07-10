@@ -170,9 +170,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const marketplaceFeatured = document.getElementById('marketplace-featured');
     const marketplaceResultCount = document.getElementById('marketplace-result-count');
     const categoryChipsRow = document.getElementById('marketplace-category-chips');
-    const myPurchasesSection = document.getElementById('my-purchases-section');
-    const myPurchasesGrid = document.getElementById('my-purchases-grid');
-    const myPurchasesCount = document.getElementById('my-purchases-count');
+    const purchasedApisFooterLink = document.getElementById('purchased-apis-footer-link');
+
+    if (purchasedApisFooterLink && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
+        purchasedApisFooterLink.href = chrome.runtime.getURL('purchased-apis/purchased-apis.html');
+    }
 
     let marketplaceItems = [];
     let activeCategory = 'all';
@@ -201,8 +203,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const actionButtonHtml = action === 'creator'
             ? `<div class="market-card-actions">
-                    <button type="button" class="btn btn-secondary market-edit-btn">Edit Listing</button>
-                    <button type="button" class="btn btn-secondary market-analytics-btn">View Analytics</button>
+                    <button type="button" class="btn btn-secondary market-edit-btn">Edit</button>
+                    <button type="button" class="btn btn-secondary market-update-btn">Update</button>
+                    <button type="button" class="btn btn-secondary market-analytics-btn">Analytics</button>
                </div>`
             : action === 'run'
                 ? `<button type="button" class="btn btn-primary market-run-btn">Run API</button>`
@@ -273,7 +276,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             alert(data.message || (isFreeItem(item) ? 'Added to your library.' : 'Purchase complete.'));
-            loadMyPurchases();
             applyMarketplaceFilters();
             if (onDone) onDone();
         } catch (err) {
@@ -364,7 +366,11 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     };
 
-    const handleEditListing = async (item) => {
+    // "Update" — a creator adjusting the commercial terms of an existing
+    // listing (price). Kept separate from "Edit" (name/description) below
+    // so each button does one obvious thing instead of one dialog trying to
+    // cover every field at once.
+    const handleUpdatePrice = async (item) => {
         const val = prompt('Enter new price (0 for Free):', String(typeof item.price !== 'undefined' ? item.price : '0'));
         if (val === null) return;
         const num = Number(val);
@@ -394,6 +400,44 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (err) {
             console.error('[ForgeFlow][marketplace] update price failed', err);
+            alert('Unable to reach the ForgeFlow backend. Please try again.');
+        }
+    };
+
+    // "Edit" — a creator changing the listing's name/description shown to
+    // buyers, as opposed to its commercial terms (see handleUpdatePrice).
+    const handleEditListingDetails = async (item) => {
+        const newName = prompt('Listing name:', item.name || '');
+        if (newName === null) return;
+        if (!newName.trim()) {
+            alert('Name cannot be empty.');
+            return;
+        }
+
+        const newDescription = prompt('Listing description:', item.description || '');
+        if (newDescription === null) return;
+
+        try {
+            const resp = await fetch(`${API_BASE}/marketplace/${item.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
+                body: JSON.stringify({ name: newName.trim(), description: newDescription })
+            });
+
+            if (resp.ok) {
+                const idx = marketplaceItems.findIndex((m) => m.id === item.id);
+                if (idx !== -1) {
+                    marketplaceItems[idx].name = newName.trim();
+                    marketplaceItems[idx].description = newDescription;
+                }
+                applyMarketplaceFilters();
+                alert('Listing details updated.');
+            } else {
+                const d = await resp.json().catch(() => ({}));
+                alert(d.message || 'Failed to update listing.');
+            }
+        } catch (err) {
+            console.error('[ForgeFlow][marketplace] update listing details failed', err);
             alert('Unable to reach the ForgeFlow backend. Please try again.');
         }
     };
@@ -442,7 +486,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (editBtn) {
             editBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
-                handleEditListing(it);
+                handleEditListingDetails(it);
+            });
+        }
+
+        const updateBtn = card.querySelector('.market-update-btn');
+        if (updateBtn) {
+            updateBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                handleUpdatePrice(it);
             });
         }
 
@@ -607,77 +659,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- My Purchased APIs ---
-
-    const buildPurchaseCardHtml = (it) => `
-        <div class="market-card-top">
-            <div class="market-card-heading">
-                <h3>${escapeHtml(it.name)}</h3>
-                <div class="market-badges">
-                    <span class="badge badge-category">${escapeHtml(categoryLabel(normalizeCategorySlug(it.category)))}</span>
-                    <span class="badge badge-owned">Owned</span>
-                </div>
-            </div>
-        </div>
-        <p class="market-card-description">${escapeHtml(it.description || 'No description provided.')}</p>
-        <div class="market-meta market-meta--rich">
-            <span class="market-meta-item" title="Creator">👤 ${escapeHtml(it.publisher || 'Unknown')}</span>
-        </div>
-        <button type="button" class="btn btn-primary market-run-btn">Run API</button>
-    `;
-
-    const renderMyPurchases = (items) => {
-        if (!myPurchasesSection || !myPurchasesGrid) return;
-
-        if (!isLoggedIn()) {
-            myPurchasesSection.hidden = true;
-            return;
-        }
-
-        myPurchasesSection.hidden = false;
-        if (myPurchasesCount) {
-            myPurchasesCount.textContent = items.length ? `${items.length} API${items.length === 1 ? '' : 's'}` : '';
-        }
-
-        if (items.length === 0) {
-            myPurchasesGrid.innerHTML = `
-                <div class="marketplace-empty">
-                    <div class="marketplace-empty-icon" aria-hidden="true">🛒</div>
-                    <h3>No purchases yet.</h3>
-                    <p>APIs you purchase from the Marketplace will show up here, ready to run.</p>
-                </div>
-            `;
-            return;
-        }
-
-        myPurchasesGrid.innerHTML = '';
-        items.forEach((it) => {
-            const card = document.createElement('article');
-            card.className = 'market-card';
-            card.dataset.id = it.id;
-            card.innerHTML = buildPurchaseCardHtml(it);
-            card.querySelector('.market-run-btn').addEventListener('click', (event) => {
-                event.stopPropagation();
-                handleRunApi(it);
-            });
-            myPurchasesGrid.appendChild(card);
-        });
-    };
-
-    const loadMyPurchases = async () => {
-        if (!isLoggedIn()) {
-            renderMyPurchases([]);
-            return;
-        }
-        try {
-            const { ok, data } = await fetchJson(`${API_BASE}/marketplace/purchases/mine`, { headers: authHeaders });
-            renderMyPurchases(ok && Array.isArray(data) ? data : []);
-        } catch (err) {
-            console.error('[ForgeFlow][marketplace] loadMyPurchases error', err);
-            renderMyPurchases([]);
-        }
-    };
-
     // --- API Details modal ---
 
     const openMarketModal = (item) => {
@@ -694,8 +675,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const actionsHtml = action === 'creator'
             ? `
-                <button class="btn btn-secondary edit-listing">Edit Listing</button>
-                <button class="btn btn-secondary view-analytics">View Analytics</button>
+                <button class="btn btn-secondary edit-listing">Edit</button>
+                <button class="btn btn-secondary update-listing">Update</button>
+                <button class="btn btn-secondary view-analytics">Analytics</button>
                 <button class="btn btn-secondary remove-listing">Remove Listing</button>
                 <button class="btn btn-secondary modal-close">Close</button>
             `
@@ -750,7 +732,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const editBtn = overlay.querySelector('.edit-listing');
         if (editBtn) {
-            editBtn.addEventListener('click', () => handleEditListing(item));
+            editBtn.addEventListener('click', () => handleEditListingDetails(item));
+        }
+
+        const updateBtn = overlay.querySelector('.update-listing');
+        if (updateBtn) {
+            updateBtn.addEventListener('click', () => handleUpdatePrice(item));
         }
 
         const analyticsBtn = overlay.querySelector('.view-analytics');
@@ -767,7 +754,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (refreshBtn) {
         refreshBtn.addEventListener('click', () => {
             loadMarketplaceItems();
-            loadMyPurchases();
         });
     }
 
@@ -802,6 +788,5 @@ document.addEventListener('DOMContentLoaded', () => {
             authHeaders = { Authorization: `Bearer ${session.token}` };
         }
         loadMarketplaceItems();
-        loadMyPurchases();
     })();
 });
