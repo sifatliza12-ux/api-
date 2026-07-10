@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ForgeFlow — Welcome</title>
+    <script src="../shared/theme.js"></script>
+    <link rel="stylesheet" href="onboarding.css">
+    <link rel="stylesheet" href="../shared/theme.css">
+</head>
+<body>
+    <main class="onboarding-shell">
+        <div class="ambient ambient-one" aria-hidden="true"></div>
+        <div class="ambient ambient-two" aria-hidden="true"></div>
+
+        <p class="usage-note" id="auth-note" hidden></p>
+
+        <section class="onboarding-intro">
+            <div class="brand-mark" aria-hidden="true">FF</div>
+            <h1>Welcome to ForgeFlow</h1>
+            <p class="onboarding-subtitle">How would you like to use ForgeFlow?</p>
+        </section>
+
+        <div class="role-card-grid">
+            <article class="role-card" data-role="creator">
+                <span class="role-card-icon" aria-hidden="true">🚀</span>
+                <h2>Creator</h2>
+                <p class="role-card-description">Create browser workflows, generate reusable APIs, publish them to the Marketplace, and manage your creations.</p>
+                <button type="button" class="btn btn-primary role-card-btn" data-role-choice="creator">Become a Creator</button>
+            </article>
+
+            <article class="role-card" data-role="buyer">
+                <span class="role-card-icon" aria-hidden="true">🛒</span>
+                <h2>Buyer</h2>
+                <p class="role-card-description">Browse Marketplace APIs, purchase APIs, and automate tasks without coding.</p>
+                <button type="button" class="btn btn-primary role-card-btn" data-role-choice="buyer">Become a Buyer</button>
+            </article>
+        </div>
+
+        <p class="onboarding-footnote">You can switch between Creator and Buyer any time from the Dashboard or Settings.</p>
+    </main>
+
+    <script src="../shared/roles.js"></script>
+    <script src="onboarding.js"></script>
+</body>
+</html>

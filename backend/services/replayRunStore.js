@@ -13,6 +13,17 @@ const insertStmt = db.prepare(`
   VALUES (@workflowId, @triggeredByUserId, @isTest, @success, @message, @finalUrl, @finalTitle, @skippedSteps, @stepLog, @extractionMethod, @createdAt)
 `);
 const countByUserStmt = db.prepare('SELECT COUNT(*) AS count FROM replay_runs WHERE triggered_by_user_id = ?');
+// Real (non-test) runs of every workflow this user owns, regardless of who
+// triggered each run — a creator's "Total API Runs" stat, i.e. how many
+// times buyers (or the creator themselves) have actually executed their
+// published APIs. Distinct from countByUser, which counts runs *this user
+// triggered* on any workflow.
+const countForOwnerStmt = db.prepare(`
+  SELECT COUNT(*) AS count
+  FROM replay_runs r
+  JOIN workflows w ON w.id = r.workflow_id
+  WHERE w.owner_id = ? AND r.is_test = 0
+`);
 
 const logRun = ({ workflowId, triggeredByUserId, isTest, success, message, finalUrl, finalTitle, skippedSteps, stepLog, extractionMethod }) => {
   insertStmt.run({
@@ -39,4 +50,6 @@ const logRun = ({ workflowId, triggeredByUserId, isTest, success, message, final
 // today, since no separate per-purchase run-tracking exists yet.
 const countByUser = (userId) => countByUserStmt.get(userId).count;
 
-module.exports = { logRun, countByUser };
+const countForOwner = (ownerId) => countForOwnerStmt.get(ownerId).count;
+
+module.exports = { logRun, countByUser, countForOwner };

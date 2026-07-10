@@ -71,6 +71,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Appearance
     const themeToggleGroup = document.getElementById('theme-toggle-group');
 
+    // Role
+    const roleToggleGroup = document.getElementById('role-toggle-group');
+
     // Notifications
     const notificationsList = document.getElementById('notifications-list');
 
@@ -198,6 +201,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!window.ForgeFlowTheme) return;
                 window.ForgeFlowTheme.set(btn.dataset.themeValue);
                 renderThemeSelection();
+            });
+        });
+    }
+
+    // --- Role (Creator / Buyer) ---
+    // Same account either way — this only ever changes shared/roles.js's
+    // stored preference, never any API/purchase data. Dashboard reads the
+    // same preference (and the two stay in sync live via
+    // ForgeFlowRoles.onRoleChange), so switching here updates the Dashboard
+    // instantly without a reload, same as switching from the Dashboard
+    // updates here.
+    const renderRoleSelection = async () => {
+        if (!roleToggleGroup || !window.ForgeFlowRoles || !currentUser) return;
+        const current = await window.ForgeFlowRoles.getRole(currentUser.id);
+        roleToggleGroup.querySelectorAll('.theme-option').forEach((btn) => {
+            const isActive = btn.dataset.roleValue === current;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-checked', String(isActive));
+        });
+    };
+
+    if (roleToggleGroup) {
+        roleToggleGroup.querySelectorAll('.theme-option').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                if (!window.ForgeFlowRoles || !currentUser) {
+                    alert('Log in from the ForgeFlow extension popup to choose a role.');
+                    return;
+                }
+                await window.ForgeFlowRoles.setRole(currentUser.id, btn.dataset.roleValue);
+                await renderRoleSelection();
             });
         });
     }
@@ -468,6 +501,7 @@ document.addEventListener('DOMContentLoaded', () => {
         profileOverrides = await getStorageValue(PROFILE_OVERRIDES_KEY, {});
         renderProfile();
         updateSecurityGatedUI();
+        await renderRoleSelection();
         await loadAccount();
     })();
 });

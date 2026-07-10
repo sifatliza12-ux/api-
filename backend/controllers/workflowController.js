@@ -5,7 +5,7 @@ const { parameterizeWorkflowRuleBased } = require('../services/ruleBasedParamete
 const { buildApiDescription } = require('../services/apiDescriptionBuilder');
 const { saveWorkflow, getWorkflow, listWorkflows, setExtractionHint } = require('../services/workflowStore');
 const { runWorkflow } = require('../services/replayEngine');
-const { logRun } = require('../services/replayRunStore');
+const { logRun, countForOwner } = require('../services/replayRunStore');
 const { buildMyApiRecord } = require('./myApisController');
 
 const parameterize = (req, res) => {
@@ -213,4 +213,17 @@ const updateExtractionHint = (req, res) => {
   }
 };
 
-module.exports = { parameterize, list, run, test, updateExtractionHint };
+// Read-only aggregate for the Creator dashboard's "Total API Runs" stat —
+// how many times *anyone* has actually run this creator's published
+// workflows. Doesn't touch parameterize/run/test at all, just queries
+// replay_runs (already written by executeAndRespond above).
+const myRunStats = (req, res) => {
+  try {
+    return res.json({ success: true, totalRuns: countForOwner(req.user.id) });
+  } catch (err) {
+    console.error('[Backend] myRunStats failed', err);
+    return res.status(500).json({ success: false, message: 'Failed to load run stats.' });
+  }
+};
+
+module.exports = { parameterize, list, run, test, updateExtractionHint, myRunStats };

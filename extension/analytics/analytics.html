@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ForgeFlow — Analytics</title>
+    <script src="../shared/theme.js"></script>
+    <link rel="stylesheet" href="../my-apis/my-apis.css">
+    <link rel="stylesheet" href="../shared/nav.css">
+    <link rel="stylesheet" href="analytics.css">
+    <link rel="stylesheet" href="../shared/theme.css">
+</head>
+<body>
+    <div class="page-shell">
+        <header class="topbar">
+            <div class="brand-group">
+                <div class="brand-mark" aria-hidden="true">FF</div>
+                <div class="brand-copy">
+                    <p class="eyebrow">ForgeFlow · Creator</p>
+                    <h1>Analytics</h1>
+                </div>
+            </div>
+            <div class="topbar-actions">
+                <p class="topbar-subtitle">How your published APIs are performing across the Marketplace.</p>
+                <button type="button" id="refresh-btn" class="btn btn-secondary" aria-label="Refresh analytics">Refresh</button>
+            </div>
+        </header>
+
+        <nav class="app-nav" id="app-nav" aria-label="Primary navigation"></nav>
+
+        <main class="page-content">
+            <p class="usage-note" id="auth-note" hidden></p>
+
+            <section class="stats-grid analytics-stats-grid" aria-label="Creator statistics">
+                <article class="stat-card">
+                    <span class="stat-label">APIs Created</span>
+                    <strong id="stat-created">0</strong>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">Published APIs</span>
+                    <strong id="stat-published">0</strong>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">Draft APIs</span>
+                    <strong id="stat-drafts">0</strong>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">Total Downloads</span>
+                    <strong id="stat-downloads">0</strong>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">Total API Runs</span>
+                    <strong id="stat-runs">0</strong>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">Average Rating</span>
+                    <strong id="stat-rating">—</strong>
+                </article>
+                <article class="stat-card stat-card--revenue">
+                    <span class="stat-label">Estimated Revenue <span class="stat-placeholder-tag">placeholder</span></span>
+                    <strong id="stat-revenue">$0</strong>
+                </article>
+            </section>
+
+            <section class="marketplace-section" aria-label="Published API performance">
+                <div class="section-heading">
+                    <h2>Your Published APIs</h2>
+                    <span class="result-count" id="published-result-count"></span>
+                </div>
+                <div id="published-analytics-list" class="analytics-table"></div>
+            </section>
+
+            <p class="footer-note">Ratings and revenue are estimated for now — real payment and review data will replace these once they ship.</p>
+        </main>
+    </div>
+
+    <script src="../shared/nav.js"></script>
+    <script src="../shared/preferences.js"></script>
+    <script src="../shared/roles.js"></script>
+    <script src="analytics.js"></script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+.stat-placeholder-tag {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted-2);
+    background: var(--panel-strong);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 2px 7px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+.stat-card--revenue strong {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 55%, var(--accent-3) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.analytics-table {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.analytics-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 16px 18px;
+    border-radius: var(--radius-md);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.analytics-row:hover {
+    transform: translateY(-2px);
+    border-color: rgba(139, 92, 246, 0.35);
+}
+
+.analytics-row-name {
+    font-weight: 700;
+    font-size: 14px;
+}
+
+.analytics-row-meta {
+    font-size: 12px;
+    color: var(--muted-2);
+}
+
+.analytics-row-stats {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.analytics-row-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    min-width: 72px;
+}
+
+.analytics-row-stat-label {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted-2);
+}
+
+.analytics-row-stat-value {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+}

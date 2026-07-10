@@ -1,0 +1,217 @@
+:root {
+    --bg-a: #12091f;
+    --bg-b: #1b1030;
+    --bg-c: #2b1238;
+    --panel: rgba(255, 255, 255, 0.05);
+    --panel-strong: rgba(255, 255, 255, 0.08);
+    --surface-solid: #1a1330;
+    --text: #f8f4ff;
+    --muted: #b8acd0;
+    --muted-2: #9b8cb7;
+    --accent: #8b5cf6;
+    --accent-2: #ec4899;
+    --accent-3: #fb923c;
+    --line: rgba(255, 255, 255, 0.12);
+    --radius-lg: 22px;
+    --radius-md: 16px;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    min-height: 100vh;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, var(--bg-a) 0%, var(--bg-b) 45%, var(--bg-c) 100%);
+    color: var(--text);
+}
+
+h1, h2 {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.onboarding-shell {
+    position: relative;
+    min-height: 100vh;
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 64px 32px 72px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 40px;
+    overflow: hidden;
+}
+
+.ambient {
+    position: fixed;
+    width: 420px;
+    height: 420px;
+    border-radius: 50%;
+    filter: blur(90px);
+    opacity: 0.5;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.ambient-one {
+    top: -120px;
+    left: -100px;
+    background: rgba(236, 72, 153, 0.28);
+}
+
+.ambient-two {
+    bottom: -140px;
+    right: -100px;
+    background: rgba(139, 92, 246, 0.26);
+}
+
+.usage-note {
+    position: relative;
+    z-index: 1;
+    font-size: 13px;
+    color: var(--muted);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 12px 16px;
+    max-width: 520px;
+    text-align: center;
+}
+
+.onboarding-intro {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 14px;
+    animation: rise-in 0.45s ease;
+}
+
+.brand-mark {
+    width: 64px;
+    height: 64px;
+    display: grid;
+    place-items: center;
+    border-radius: 20px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 50%, var(--accent-3) 100%);
+    color: #fff;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    box-shadow: 0 16px 34px rgba(236, 72, 153, 0.3);
+}
+
+.onboarding-intro h1 {
+    font-size: 34px;
+}
+
+.onboarding-subtitle {
+    font-size: 16px;
+    color: var(--muted);
+}
+
+.role-card-grid {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px;
+    animation: rise-in 0.5s ease 0.05s both;
+}
+
+.role-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 14px;
+    padding: 40px 32px;
+    border-radius: var(--radius-lg);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    box-shadow: 0 20px 44px rgba(6, 4, 14, 0.28);
+    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.role-card:hover {
+    transform: translateY(-6px);
+    border-color: rgba(139, 92, 246, 0.4);
+    box-shadow: 0 28px 56px rgba(6, 4, 14, 0.36);
+}
+
+.role-card-icon {
+    font-size: 40px;
+    line-height: 1;
+}
+
+.role-card h2 {
+    font-size: 22px;
+}
+
+.role-card-description {
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--muted);
+    margin: 4px 0 8px;
+}
+
+.role-card-btn {
+    width: 100%;
+    margin-top: 4px;
+}
+
+.btn {
+    font-family: inherit;
+    cursor: pointer;
+    padding: 13px 22px;
+    font-size: 15px;
+    font-weight: 700;
+    border-radius: 999px;
+    border: none;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+}
+
+.btn:active {
+    transform: translateY(0);
+}
+
+.btn-primary {
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 55%, var(--accent-3) 100%);
+    box-shadow: 0 12px 26px rgba(236, 72, 153, 0.26);
+}
+
+.onboarding-footnote {
+    position: relative;
+    z-index: 1;
+    font-size: 12.5px;
+    color: var(--muted-2);
+    text-align: center;
+}
+
+@keyframes rise-in {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 640px) {
+    .onboarding-shell {
+        padding: 40px 20px 56px;
+    }
+
+    .onboarding-intro h1 {
+        font-size: 26px;
+    }
+}

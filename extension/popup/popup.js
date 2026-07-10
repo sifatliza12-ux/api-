@@ -126,6 +126,28 @@ const popupApp = {
             chrome.tabs.create({ url: dashboardUrl });
         };
 
+        // First-time role choice, triggered right at the moment of a
+        // successful login/signup — not on every popup open (see the silent
+        // session-restore at the bottom of this file, which deliberately
+        // does NOT call this). shared/roles.js remembers the choice per
+        // user id, so this only ever opens once per account; Dashboard also
+        // still guards itself the same way as a fallback, in case this tab
+        // gets closed before a role is picked.
+        const maybeOpenOnboarding = async (user) => {
+            if (!user?.id || !window.ForgeFlowRoles || typeof chrome === 'undefined' || !chrome.tabs) {
+                return;
+            }
+            try {
+                const alreadyChosen = await window.ForgeFlowRoles.hasChosenRole(user.id);
+                if (alreadyChosen) {
+                    return;
+                }
+                chrome.tabs.create({ url: chrome.runtime.getURL('onboarding/onboarding.html') });
+            } catch (error) {
+                console.warn('[ForgeFlow][popup] could not check role, skipping onboarding redirect', error);
+            }
+        };
+
         const defaultWorkflowName = () => `Workflow - ${new Date().toLocaleString()}`;
 
         const sendRuntimeMessage = (message) => new Promise((resolve) => {
@@ -273,6 +295,7 @@ const popupApp = {
                     clearLoginError();
                     await saveAuthSession(data.token, data.user);
                     passwordInput.value = '';
+                    await maybeOpenOnboarding(data.user);
                     handleFreeTrialNavigation();
                     return;
                 }
@@ -388,6 +411,7 @@ const popupApp = {
                     await saveAuthSession(data.token, data.user);
                     passwordInput.value = '';
                     confirmPasswordInput.value = '';
+                    await maybeOpenOnboarding(data.user);
                     navigateToDashboard();
                     return;
                 }

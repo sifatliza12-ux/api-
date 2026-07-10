@@ -55,6 +55,22 @@
                     <button type="button" id="edit-profile-btn" class="btn btn-secondary">Edit Profile</button>
                 </section>
 
+                <section class="settings-card" aria-label="Role">
+                    <div class="settings-card-header">
+                        <span class="settings-card-icon" aria-hidden="true">🔀</span>
+                        <h2>Current Mode</h2>
+                    </div>
+                    <p class="settings-card-copy">One ForgeFlow account, two experiences — switch any time, your APIs and purchases stay exactly as they are.</p>
+                    <div class="theme-toggle-group" id="role-toggle-group" role="radiogroup" aria-label="Role">
+                        <button type="button" class="theme-option" data-role-value="creator" role="radio">
+                            <span aria-hidden="true">🚀</span> Creator
+                        </button>
+                        <button type="button" class="theme-option" data-role-value="buyer" role="radio">
+                            <span aria-hidden="true">🛒</span> Buyer
+                        </button>
+                    </div>
+                </section>
+
                 <section class="settings-card" aria-label="Appearance">
                     <div class="settings-card-header">
                         <span class="settings-card-icon" aria-hidden="true">🎨</span>
@@ -183,6 +199,7 @@
         </main>
     </div>
 
+    <script src="../shared/roles.js"></script>
     <script src="../shared/nav.js"></script>
     <script src="../shared/preferences.js"></script>
     <script src="settings.js"></script>
