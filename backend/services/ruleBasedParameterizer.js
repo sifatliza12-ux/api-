@@ -164,7 +164,14 @@ const buildDescription = (describe, label, event) => {
 };
 
 const DATE_VALUE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const DATE_NAME_PATTERN = /date|dob|birthday|\bday\b|\bmonth\b|\byear\b/i;
+// Every term is word-bounded, including "date"/"dob" — an unbounded match
+// would fire on any selector/name that merely CONTAINS those letters
+// ("candidateName", "updateField", "validateEmail", "mandatoryField"),
+// wrongly classifying an ordinary text field as a date. That misclassification
+// isn't cosmetic: the UI renders a native date-picker input for it (see
+// buildParamFieldHtml in my-apis.js), which silently discards any non-date
+// value it's seeded with — making the field appear to accept no edits at all.
+const DATE_NAME_PATTERN = /\bdate\b|\bdob\b|\bbirthday\b|\bday\b|\bmonth\b|\byear\b/i;
 
 // checkbox/radio events already carry a real boolean (content.js's
 // getElementValue returns target.checked, not a string), so that check is
@@ -351,6 +358,76 @@ const classifyDynamicClick = (event, context = {}) => {
   return null;
 };
 
+const FULL_PLACEHOLDER_PATTERN = /^\{\{(.+)\}\}$/;
+
+// A resolved step's value is either a brand-new placeholder or a link to an
+// existing one, but either way it's always exactly "{{paramName}}" (see
+// buildDynamicClickUpgrade/the input branch below) — this pulls that name
+// back out so a later step can be told "this is the same live value".
+const extractPlaceholderName = (value) => {
+  if (typeof value !== 'string') return null;
+  const match = value.match(FULL_PLACEHOLDER_PATTERN);
+  return match ? match[1] : null;
+};
+
+const escapeForRegex = (text) => String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// A typed/clicked value doesn't just vanish once the browser acts on it —
+// on a great many sites (virtually every search engine, and any GET-based
+// search/filter form) it reappears verbatim, percent-encoded, inside the URL
+// the workflow lands on next ("?q=cats", "?search=cats", "/search/cats").
+// These are the literal forms that survival can take, in the order they're
+// tried (longest/most-specific first once sorted by the caller).
+const urlEncodingVariants = (rawValue) => {
+  const value = String(rawValue);
+  const percentEncoded = encodeURIComponent(value);
+  const plusEncoded = percentEncoded.replace(/%20/g, '+');
+  return Array.from(new Set([value, percentEncoded, plusEncoded])).filter((v) => v && v.length >= 2);
+};
+
+// Finds wherever the value just typed into a field (or just clicked as a
+// dynamic suggestion) survived into a URL a subsequent navigation/new_page
+// step landed on, and rewrites just that occurrence to the SAME parameter's
+// placeholder — so "navigate to https://site.com/search?q=cats" becomes
+// "...?q={{destination}}" and tracks whatever value that parameter is given
+// at replay time, instead of staying frozen at "cats" forever. Deliberately
+// only ever touches the path/query/hash portion of the URL, never the
+// origin, so a value that happens to overlap part of the domain itself
+// (rare, but possible for very short/common words) can never corrupt it.
+// Generic by construction: no site, query-key name, or URL shape is
+// hardcoded — only "does this literal value, in some encoding, appear in
+// the URL that came right after it was produced."
+const linkUrlToPendingValue = (rawUrl, paramName, pendingValue) => {
+  if (!rawUrl || !paramName || typeof pendingValue !== 'string') return null;
+  const trimmedValue = pendingValue.trim();
+  if (!trimmedValue) return null;
+
+  let origin = '';
+  let tail = rawUrl;
+  try {
+    const parsed = new URL(rawUrl);
+    origin = parsed.origin;
+    tail = rawUrl.slice(origin.length);
+  } catch (error) {
+    // Relative or otherwise unparseable as an absolute URL — operate on the
+    // whole string; there's no origin to protect.
+  }
+
+  const variants = urlEncodingVariants(trimmedValue).sort((a, b) => b.length - a.length);
+  let rewrittenTail = tail;
+  let matched = false;
+
+  for (const variant of variants) {
+    const regex = new RegExp(escapeForRegex(variant), 'g');
+    if (regex.test(rewrittenTail)) {
+      rewrittenTail = rewrittenTail.replace(regex, `{{${paramName}}}`);
+      matched = true;
+    }
+  }
+
+  return matched ? `${origin}${rewrittenTail}` : null;
+};
+
 const NAME_PREFIX_BY_KIND = {
   calendar_date: 'calendarDate',
   price: 'priceOption',
@@ -398,6 +475,84 @@ const buildDynamicClickUpgrade = (event, dynamicCountByPrefix, usedNames, contex
 
   const step = { ...event, type: dynamicClick.kind, value: `{{${uniqueName}}}` };
   return { parameter, step };
+};
+
+// Step types whose parameter came from a real DOM form-field event
+// (input/change) — the only family where the SAME element can legitimately
+// fire more than one recorded event that each independently became its own
+// parameter (a browser's own 'input', firing per keystroke and already
+// collapsed to its final value upstream, followed by its native 'change' on
+// blur/Enter — virtually universal behavior for text fields on any site,
+// framework, or workflow). Deliberately excludes click-family step types:
+// two clicks sharing a generic, reusable selector (e.g. two different
+// autocomplete pickers on the same page both rendering suggestions under an
+// identical CSS class) are very often genuinely DIFFERENT logical inputs,
+// so merging those by selector alone would wrongly conflate them.
+const FIELD_VALUE_STEP_TYPES = new Set(['input', 'change']);
+
+// Multiple recorded events on the exact same form field each get their OWN
+// parameter from the per-event pass above, purely because that pass only
+// ever looks at one event at a time — it has no way to know a later event
+// targets a field it's already parameterized. Both steps are still real,
+// distinct replay actions (a native 'change' can trigger site behavior an
+// 'input' alone doesn't — populating suggestions, running validation — so
+// neither can simply be dropped), but a caller should only ever see and
+// edit ONE parameter for what is, from their point of view, a single field
+// they'd type a single value into. Left undetected, this doesn't just
+// clutter the parameter list: editing the FIRST (visible, "obvious")
+// duplicate has no effect on final replay, because the LATER step — bound
+// to its own, still-recorded value — fills the field again right after and
+// silently overwrites the edit.
+//
+// This finds every group of field-value parameters that share the exact
+// same originating selector, keeps the first (canonical) one, and repoints
+// EVERY step in the whole workflow — not just the ones that produced the
+// duplicate, since a dynamic_click/navigation step elsewhere may already be
+// linked to it — at that one placeholder. Purely structural (selector
+// equality on step type, nothing else): no site, field name, or label is
+// ever inspected.
+const dedupeFieldParameters = (parameters, steps) => {
+  const canonicalNameBySelector = new Map();
+  const renameMap = new Map();
+
+  const keptParameters = parameters.filter((param) => {
+    const originStep = steps[param.eventIndex];
+    if (!originStep || !FIELD_VALUE_STEP_TYPES.has(originStep.type) || !originStep.selector) {
+      return true;
+    }
+
+    const existingCanonical = canonicalNameBySelector.get(originStep.selector);
+    if (!existingCanonical) {
+      canonicalNameBySelector.set(originStep.selector, param.name);
+      return true;
+    }
+
+    renameMap.set(param.name, existingCanonical);
+    return false;
+  });
+
+  if (renameMap.size === 0) {
+    return { parameters, steps };
+  }
+
+  const renamePlaceholders = (value) => {
+    if (typeof value !== 'string' || !value.includes('{{')) {
+      return value;
+    }
+    let result = value;
+    renameMap.forEach((canonicalName, duplicateName) => {
+      result = result.split(`{{${duplicateName}}}`).join(`{{${canonicalName}}}`);
+    });
+    return result;
+  };
+
+  const nextSteps = steps.map((step) => ({
+    ...step,
+    value: renamePlaceholders(step.value),
+    url: renamePlaceholders(step.url)
+  }));
+
+  return { parameters: keptParameters, steps: nextSteps };
 };
 
 const parameterizeWorkflowRuleBased = (events) => {
@@ -465,9 +620,18 @@ const parameterizeWorkflowRuleBased = (events) => {
 
     if (event.type === 'click' || event.type === 'dblclick') {
       const upgrade = buildDynamicClickUpgrade(event, dynamicCountByPrefix, usedNames, { relatedParamName: pendingInputParamName, relatedParamValue: pendingInputValue });
-      pendingInputParamName = null;
+
+      // A resolved dynamic click (a suggestion, a price/time/number option)
+      // carries the same "this text is what the live parameter produced"
+      // signal an input does — if that click's own recorded text survives
+      // into a URL the workflow lands on next (e.g. a link opened in a new
+      // tab), that URL should keep tracking the live value too. A plain,
+      // unparameterized click (a nav link, a "Search" button) carries no
+      // such signal, so it still closes the window exactly as before.
+      const resolvedParamName = upgrade ? extractPlaceholderName(upgrade.step.value) : null;
+      pendingInputParamName = resolvedParamName;
       pendingInputSelector = null;
-      pendingInputValue = null;
+      pendingInputValue = resolvedParamName && typeof event.value === 'string' ? event.value.trim() : null;
 
       if (upgrade) {
         if (upgrade.parameter) {
@@ -479,16 +643,39 @@ const parameterizeWorkflowRuleBased = (events) => {
       return { ...event };
     }
 
-    // Any other event type (scroll, touch, navigation, new_page, ...)
-    // closes the "about to pick a suggestion" window just as much as a
-    // click does. A real suggestion selection happens in the SAME
-    // interaction burst as the typing — nothing else recorded in between.
-    // Without this, a click many steps later (after the user scrolled off
-    // to browse something else entirely) could still inherit a stale link
-    // to a field they typed into long before — exactly what happened with
-    // a plain wikilink click 15 scrolls after a "light" checkbox, which
-    // got wrongly tied to that checkbox's boolean value instead of being
-    // left as an ordinary, unparameterized click.
+    if (event.type === 'navigation' || event.type === 'new_page') {
+      // The URL a step lands on right after a live typed/clicked value was
+      // produced is exactly the case content.js can't see coming: pressing
+      // Enter in a search box (or a form's native submit) navigates the
+      // browser directly, with no separate click event at all — so unlike a
+      // suggestion click, this URL was NEVER given a chance to become a
+      // parameter. Left alone it stays a frozen literal forever, and replay
+      // will re-force it verbatim regardless of what the caller supplies.
+      // Linking it here closes that gap the same way suggestion clicks are
+      // already linked, just one step further down the chain.
+      const urlField = event.type === 'navigation' ? 'value' : 'url';
+      const rawUrl = event[urlField];
+      const linkedUrl = pendingInputParamName
+        ? linkUrlToPendingValue(rawUrl, pendingInputParamName, pendingInputValue)
+        : null;
+
+      pendingInputParamName = null;
+      pendingInputSelector = null;
+      pendingInputValue = null;
+
+      return linkedUrl ? { ...event, [urlField]: linkedUrl } : { ...event };
+    }
+
+    // Any other event type (scroll, touch, ...) closes the "about to pick a
+    // suggestion" window just as much as a click does. A real suggestion
+    // selection happens in the SAME interaction burst as the typing —
+    // nothing else recorded in between. Without this, a click many steps
+    // later (after the user scrolled off to browse something else entirely)
+    // could still inherit a stale link to a field they typed into long
+    // before — exactly what happened with a plain wikilink click 15 scrolls
+    // after a "light" checkbox, which got wrongly tied to that checkbox's
+    // boolean value instead of being left as an ordinary, unparameterized
+    // click.
     pendingInputParamName = null;
     pendingInputSelector = null;
     pendingInputValue = null;
@@ -496,8 +683,21 @@ const parameterizeWorkflowRuleBased = (events) => {
     return { ...event };
   });
 
-  console.log('[Backend][pipeline] step 4: workflow template created', { stepCount: steps.length, parameterCount: parameters.length });
-  return { parameters, steps };
+  const deduped = dedupeFieldParameters(parameters, steps);
+
+  console.log('[Backend][pipeline] step 4: workflow template created', {
+    stepCount: deduped.steps.length,
+    parameterCount: deduped.parameters.length
+  });
+  return deduped;
 };
 
-module.exports = { parameterizeWorkflowRuleBased, classifyDynamicClick, buildDynamicClickUpgrade, looksLikePlausibleSuggestion };
+module.exports = {
+  parameterizeWorkflowRuleBased,
+  classifyDynamicClick,
+  buildDynamicClickUpgrade,
+  looksLikePlausibleSuggestion,
+  extractPlaceholderName,
+  linkUrlToPendingValue,
+  dedupeFieldParameters
+};

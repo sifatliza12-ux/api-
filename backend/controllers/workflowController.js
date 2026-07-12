@@ -1,12 +1,46 @@
 // Using the rule-based parameterizer for now to avoid requiring Anthropic API
 // billing/setup at this stage. services/workflowParameterizer.js (LLM-based)
 // is left in place, unused, in case we switch back later.
-const { parameterizeWorkflowRuleBased } = require('../services/ruleBasedParameterizer');
+const { parameterizeWorkflowRuleBased, extractPlaceholderName } = require('../services/ruleBasedParameterizer');
 const { buildApiDescription } = require('../services/apiDescriptionBuilder');
 const { saveWorkflow, getWorkflow, listWorkflows, setExtractionHint } = require('../services/workflowStore');
-const { runWorkflow } = require('../services/replayEngine');
+const { runWorkflow, parseTargetDate } = require('../services/replayEngine');
 const { logRun, countForOwner } = require('../services/replayRunStore');
 const { buildMyApiRecord } = require('./myApisController');
+
+// A parameter's declared `type` is metadata for the UI and for this gate —
+// replay itself never branches on it. Only two types have a downstream
+// consumer that can actually THROW on a bad value: a `calendar_date` step's
+// semantic date parser, and Number() producing NaN for a `number` type that
+// then gets silently embedded as the literal string "NaN". Catching both
+// here — before a browser is ever launched — turns "the run mysteriously
+// failed/produced garbage mid-replay" into an immediate, clear 400 the
+// caller can act on, without changing what a *valid* edit does. Boolean and
+// text values are never rejected: any string is valid free text, and
+// checkboxes are already true/false by construction (my-apis.js sends
+// `input.checked` directly).
+const validateParameterValues = (workflow, parameterValues) => {
+  const calendarParamNames = new Set(
+    (workflow.steps || [])
+      .filter((step) => step.type === 'calendar_date')
+      .map((step) => extractPlaceholderName(step.value))
+      .filter(Boolean)
+  );
+
+  for (const param of workflow.parameters || []) {
+    const value = parameterValues[param.name];
+
+    if (calendarParamNames.has(param.name) && !parseTargetDate(value)) {
+      return `"${param.label || param.name}" must be a valid, parseable date (received ${JSON.stringify(value)}).`;
+    }
+
+    if (param.type === 'number' && value !== null && typeof value !== 'undefined' && value !== '' && Number.isNaN(Number(value))) {
+      return `"${param.label || param.name}" must be a valid number (received ${JSON.stringify(value)}).`;
+    }
+  }
+
+  return null;
+};
 
 const parameterize = (req, res) => {
   try {
@@ -149,6 +183,15 @@ const run = async (req, res) => {
         ? suppliedValues[param.name]
         : param.defaultValue;
     });
+
+    // Fail fast, clearly, and BEFORE a browser is ever launched, rather than
+    // deep inside a step several minutes into a replay — see
+    // validateParameterValues above for exactly what this does and doesn't
+    // reject (a legitimate edit is never rejected here).
+    const validationError = validateParameterValues(workflow, parameterValues);
+    if (validationError) {
+      return res.status(400).json({ success: false, message: validationError });
+    }
 
     return await executeAndRespond({ res, workflow, parameterValues, isTest: false, triggeredByUserId: req.user?.id ?? null });
   } catch (err) {

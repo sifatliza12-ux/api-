@@ -1,9 +1,32 @@
 const myApisStore = require('../services/myApisStore');
 const marketplaceStore = require('../services/marketplaceStore');
-const { setVisibility, deleteWorkflow } = require('../services/workflowStore');
+const { setVisibility, deleteWorkflow, getWorkflow } = require('../services/workflowStore');
+
+// my_apis.parameters is a snapshot taken once, at parameterize time — it
+// never gets rewritten afterward. workflow.parameters, meanwhile, CAN change
+// after that: getWorkflow() lazily (and now more often, since it also folds
+// duplicate field parameters together — see workflowUpgrader.js) upgrades a
+// stored workflow's parameter set on every single load. Without this, the
+// "My APIs" UI could keep showing an outdated parameter list — missing a
+// parameter that now exists, or still offering to edit one that was folded
+// into another and no longer exists — even though /run has already moved
+// on to the current set. Overlaying the live parameters here is what keeps
+// "what the UI lets you edit" and "what the backend will actually use"
+// from drifting apart; every other My APIs field still comes from its own
+// stored record untouched.
+const withLiveParameters = (item) => {
+  if (!item || !item.workflowId) {
+    return item;
+  }
+  const workflow = getWorkflow(item.workflowId);
+  if (!workflow) {
+    return item;
+  }
+  return { ...item, parameters: workflow.parameters };
+};
 
 const listMyApis = (req, res) => {
-  const own = myApisStore.listByOwner(req.user.id);
+  const own = myApisStore.listByOwner(req.user.id).map(withLiveParameters);
   console.log('[Backend][pipeline] step 7: GET /api/my-apis', {
     userId: req.user?.id,
     ownedByThisUser: own.length
@@ -16,7 +39,7 @@ const getMyApiById = (req, res) => {
   if (!item || item.ownerId !== req.user.id) {
     return res.status(404).json({ success: false, message: 'API not found' });
   }
-  res.json(item);
+  res.json(withLiveParameters(item));
 };
 
 // Shared by the createMyApi route and by workflowController.parameterize, so

@@ -7,11 +7,20 @@ const DEBUG_DIR = path.join(__dirname, '..', 'debug');
 let debugCaptureCount = 0;
 
 const DEFAULT_TIMEOUT_MS = 15000;
-// Non-critical steps (scroll/touch/dblclick) get a shorter budget so a
-// missing target — e.g. dynamic content like a marquee that isn't present
-// on replay — doesn't stall the whole run before being skipped.
+// Non-critical steps get a shorter budget so a missing target — e.g.
+// decorative dynamic content like a marquee that scroll/touch targeted
+// during recording but isn't present on replay — doesn't stall the whole
+// run before being skipped. Deliberately NOT click-family steps: a
+// dblclick is exactly as likely as a single click to be a load-bearing
+// interaction (expanding an accordion, revealing a confirm button that a
+// LATER step depends on) — silently skipping it after a short timeout,
+// while the same element would have appeared comfortably within the
+// standard critical-step budget, doesn't make that dblclick's own effect
+// optional; it just relocates the eventual failure to a later, unrelated
+// step and hides the real cause. Only truly cosmetic/best-effort actions
+// belong in this set.
 const NON_CRITICAL_TIMEOUT_MS = 4000;
-const NON_CRITICAL_STEP_TYPES = new Set(['scroll', 'touch', 'dblclick']);
+const NON_CRITICAL_STEP_TYPES = new Set(['scroll', 'touch']);
 const PLACEHOLDER_PATTERN = /^\{\{(.+)\}\}$/;
 
 const BACKOFF_BASE_MS = 250;
@@ -178,6 +187,45 @@ const locatorFromCandidate = (page, candidate) => {
 // this same fresh search every round, so there's nothing to gain — and a
 // wrong-element risk to lose — by giving the stale candidates a chance to
 // win early. They're only used when there's truly no live value to look for.
+// Human-readable "what this step targets" for the per-step diagnostic log —
+// generic across every step type (a real selector, a locator candidate, or
+// for navigation-shaped steps that have no DOM target at all, the URL/
+// template itself), never anything site-specific.
+const describeStepTarget = (step) => {
+  if (step.selector) {
+    return step.selector;
+  }
+  if (Array.isArray(step.locators) && step.locators.length) {
+    const first = step.locators[0];
+    return first.value || `${first.strategy}${first.role ? ':' + first.role : ''}${first.name ? ':' + first.name : ''}`;
+  }
+  if (step.type === 'navigation') {
+    return step.value || null;
+  }
+  if (step.type === 'new_page') {
+    return step.url || null;
+  }
+  return null;
+};
+
+// Best-effort visual snapshot of the page right after a step finished —
+// part of the per-step diagnostic log (requirement: "screenshot after the
+// step"). Never allowed to affect replay outcome: a screenshot failure (page
+// already navigating/closing, no display, disk issue) is swallowed exactly
+// like the existing blocker/calendar diagnostics captures elsewhere in this
+// file, and simply leaves screenshotPath null.
+const captureStepScreenshot = async (page, stepIndex) => {
+  try {
+    if (!fs.existsSync(DEBUG_DIR)) fs.mkdirSync(DEBUG_DIR, { recursive: true });
+    debugCaptureCount += 1;
+    const screenshotPath = path.join(DEBUG_DIR, `step${stepIndex}-${Date.now()}-${debugCaptureCount}.jpg`);
+    await page.screenshot({ path: screenshotPath, type: 'jpeg', quality: 60, timeout: 3000 });
+    return screenshotPath;
+  } catch (error) {
+    return null;
+  }
+};
+
 const getCandidateList = (step, parameterValues) => {
   if (step.type === 'dynamic_click' && step.value) {
     try {
@@ -369,6 +417,7 @@ const waitForActionableElement = async (page, step, { timeoutMs, log, parameterV
     const found = await findActionableCandidate(page, candidates);
     if (found.locator) {
       log.retries = attempt;
+      log.elementFound = true;
       log.strategyUsed = found.candidate.strategy;
       log.strategyValue = found.candidate.value || `${found.candidate.role || ''}:${found.candidate.name || ''}`;
       return found.locator;
@@ -394,6 +443,7 @@ const waitForActionableElement = async (page, step, { timeoutMs, log, parameterV
   }
 
   log.retries = attempt;
+  log.elementFound = false;
   log.failureReason = lastReason;
 
   // Terminal timeout with a real "covered" candidate on hand — capture what
@@ -432,6 +482,7 @@ const performWithRetry = async (page, step, log, timeoutMs, actionFn, parameterV
 
     try {
       await actionFn(locator);
+      log.actionExecuted = true;
       return;
     } catch (error) {
       const remaining = deadline - Date.now();
@@ -464,9 +515,12 @@ const performWithRetry = async (page, step, log, timeoutMs, actionFn, parameterV
   }
 };
 
-// Every parameterized step's value is set to exactly "{{paramName}}" (see
-// ruleBasedParameterizer.js) so a full-string match is all that's needed —
-// there's no embedded-placeholder-in-a-larger-string case to handle.
+// Every parameterized input/click/calendar step's value is set to exactly
+// "{{paramName}}" (see ruleBasedParameterizer.js) so a full-string match is
+// all that's needed for those step types — there's no embedded-placeholder-
+// in-a-larger-string case to handle here. Navigation/new_page URLs are the
+// one exception (see resolveUrlTemplate below), because a param there is
+// only ever ONE piece of a larger URL, never the step's whole value.
 const substitutePlaceholders = (value, parameterValues) => {
   if (typeof value !== 'string') {
     return value;
@@ -483,6 +537,44 @@ const substitutePlaceholders = (value, parameterValues) => {
   }
 
   return parameterValues[paramName];
+};
+
+const EMBEDDED_PLACEHOLDER_PATTERN = /\{\{([^{}]+)\}\}/g;
+
+// Resolves a navigation/new_page URL that may carry a placeholder EMBEDDED
+// inside it (e.g. "https://site.com/search?q={{destination}}" — see
+// linkUrlToPendingValue in ruleBasedParameterizer.js, which is what rewrites
+// a recorded literal URL into this template in the first place). Each
+// occurrence is percent-encoded on the way in, since it's being spliced into
+// a URL's path/query rather than assigned wholesale to a field value. This
+// is what makes a runtime parameter change actually reach a step whose
+// original navigation was triggered by a native form submit / Enter
+// keypress rather than a click — there is no separate "click" event for the
+// replay engine to trust the live outcome of in that case, so the URL itself
+// has to already be data-driven.
+const resolveUrlTemplate = (urlTemplate, parameterValues) => {
+  if (typeof urlTemplate !== 'string' || !urlTemplate) {
+    return urlTemplate;
+  }
+
+  // Whole-value placeholder ("{{name}}" and nothing else) — behaves exactly
+  // like substitutePlaceholders, preserving whatever type the parameter
+  // actually holds rather than forcing it through string coercion.
+  if (PLACEHOLDER_PATTERN.test(urlTemplate)) {
+    return substitutePlaceholders(urlTemplate, parameterValues);
+  }
+
+  if (!urlTemplate.includes('{{')) {
+    return urlTemplate;
+  }
+
+  return urlTemplate.replace(EMBEDDED_PLACEHOLDER_PATTERN, (whole, rawName) => {
+    const paramName = rawName.trim();
+    if (!Object.prototype.hasOwnProperty.call(parameterValues, paramName)) {
+      throw new Error(`Missing value for parameter "${paramName}"`);
+    }
+    return encodeURIComponent(String(parameterValues[paramName]));
+  });
 };
 
 const parseScrollValue = (value) => {
@@ -741,7 +833,9 @@ const performCalendarDateClick = async (page, step, parameterValues, log, timeou
     if (cell) {
       log.strategyUsed = 'calendar-semantic';
       log.retries = monthAdvances;
+      log.elementFound = true;
       await cell.click();
+      log.actionExecuted = true;
       return;
     }
 
@@ -761,6 +855,7 @@ const performCalendarDateClick = async (page, step, parameterValues, log, timeou
     await waitForPageStability(page, 1000);
   }
 
+  log.elementFound = false;
   log.failureReason = `No calendar cell found for ${targetDate.toDateString()} after advancing ${monthAdvances} month(s)`;
   const diagnostics = await captureCalendarDiagnostics({ page, stepIndex: step.index, targetDate, monthAdvances });
   log.calendarDiagnostics = diagnostics;
@@ -834,14 +929,27 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
     for (let i = 0; i < steps.length; i += 1) {
       const step = steps[i];
       const startedAt = Date.now();
+      // Full diagnostic schema for every step, per requirement: step number
+      // (index), step type, selector/target, whether an element was found,
+      // whether the action actually executed, the URL before and after, and
+      // a best-effort screenshot. `elementFound`/`actionExecuted` start out
+      // null/false and are only ever set true by the code path that actually
+      // did that work — a step that never reaches waitForActionableElement
+      // (navigation, scroll-window, touch) correctly stays `elementFound:
+      // null` (not applicable) rather than a misleading true/false.
       const log = {
         index: i,
         type: step.type,
+        selector: describeStepTarget(step),
+        urlBefore: null,
         url: null,
+        elementFound: null,
+        actionExecuted: false,
         strategyUsed: null,
         retries: 0,
         blockersDismissed: [],
         failureReason: null,
+        screenshotPath: null,
         result: 'success'
       };
 
@@ -851,7 +959,8 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
         }
 
         const page = tracker.current;
-        log.url = page.url();
+        log.urlBefore = page.url();
+        log.url = log.urlBefore;
         const timeoutMs = NON_CRITICAL_STEP_TYPES.has(step.type) ? NON_CRITICAL_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
 
         switch (step.type) {
@@ -885,8 +994,9 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
                 log.blockersDismissed.push(dismissedAfterClick);
               }
 
-              if (page.url() !== previousLog.url) {
+              if (page.url() !== previousLog.urlBefore) {
                 log.strategyUsed = 'navigation-already-occurred';
+                log.actionExecuted = true;
                 tracker.remember(page);
                 log.url = page.url();
                 break;
@@ -895,7 +1005,7 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
               // the normal forced navigation below.
             }
 
-            const url = substitutePlaceholders(step.value, values);
+            const url = resolveUrlTemplate(step.value, values);
             if (url) {
               await page.goto(url, { waitUntil: 'domcontentloaded', timeout: DEFAULT_TIMEOUT_MS });
               await waitForPageStability(page, DEFAULT_TIMEOUT_MS);
@@ -909,6 +1019,7 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
               }
               tracker.remember(page);
               log.url = page.url();
+              log.actionExecuted = true;
             }
             break;
           }
@@ -944,22 +1055,27 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
             const target = step.meta?.target;
             if (!target || target === 'window') {
               await scrollWindow(page, x, y);
+              log.elementFound = null; // n/a — scrolling the window has no element to find.
             } else {
               await scrollElement(page, target, x, y, NON_CRITICAL_TIMEOUT_MS);
+              log.elementFound = true; // scrollElement's own waitForSelector already threw if missing.
             }
+            log.actionExecuted = true;
             break;
           }
 
           case 'touch': {
             await simulateTouch(page, step.value, step.meta);
+            log.actionExecuted = true;
             break;
           }
 
           case 'new_page': {
             const newPage = await context.newPage();
             tracker.current = newPage;
-            if (step.url) {
-              await newPage.goto(step.url, { waitUntil: 'domcontentloaded', timeout: DEFAULT_TIMEOUT_MS }).catch(() => {});
+            const newPageUrl = resolveUrlTemplate(step.url, values);
+            if (newPageUrl) {
+              await newPage.goto(newPageUrl, { waitUntil: 'domcontentloaded', timeout: DEFAULT_TIMEOUT_MS }).catch(() => {});
               await waitForPageStability(newPage, DEFAULT_TIMEOUT_MS);
               const dismissed = await dismissCommonOverlays(newPage);
               if (dismissed) {
@@ -968,6 +1084,7 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
             }
             tracker.remember(newPage);
             log.url = newPage.url();
+            log.actionExecuted = true;
             break;
           }
 
@@ -977,8 +1094,21 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
             log.failureReason = `Unrecognized step type "${step.type}"`;
             break;
         }
+
+        // Success path: capture the definitive post-step URL (overwrites the
+        // pre-action value every case above already set as a fallback) and a
+        // best-effort screenshot, against whatever page is current NOW — a
+        // step can itself have switched tracker.current (navigation/new_page).
+        log.url = tracker.current.url();
+        log.screenshotPath = await captureStepScreenshot(tracker.current, i);
       } catch (stepError) {
         log.failureReason = log.failureReason || stepError.message;
+        // Best-effort even on failure — this is exactly the moment a
+        // screenshot/URL reading matters most for diagnosing WHY a step
+        // didn't complete. tracker.current still points at a live page even
+        // when the step's own action failed.
+        try { log.url = tracker.current.url(); } catch (readError) { /* page may be closed/gone */ }
+        log.screenshotPath = await captureStepScreenshot(tracker.current, i);
 
         if (NON_CRITICAL_STEP_TYPES.has(step.type)) {
           log.result = 'skipped';
@@ -988,7 +1118,7 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
           log.result = 'failed';
           log.durationMs = Date.now() - startedAt;
           stepLog.push(log);
-          console.error('[Backend][replay]', JSON.stringify(log));
+          console.error('[Backend][replay] STEP FAILED — replay stops here.', JSON.stringify(log));
           throw Object.assign(new Error(`Step ${i} (${step.type}) failed: ${stepError.message}`), {
             stepIndex: i,
             stepType: step.type,
@@ -1051,4 +1181,8 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
   }
 };
 
-module.exports = { runWorkflow };
+// Exported so the run/test controller can validate an edited calendar_date
+// parameter BEFORE launching a browser, using the exact same parser replay
+// itself will use — a value that fails here would fail identically deep
+// inside performCalendarDateClick, just after wastefully opening a browser.
+module.exports = { runWorkflow, parseTargetDate };

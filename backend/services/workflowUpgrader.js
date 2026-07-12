@@ -14,7 +14,7 @@
 //      rewrite them into calendar_date/dynamic_click steps + add a
 //      parameter (requirements 1-3, 7) — using the ORIGINAL literal text,
 //      captured in step 1 before this step replaces it with a placeholder.
-const { buildDynamicClickUpgrade } = require('./ruleBasedParameterizer');
+const { buildDynamicClickUpgrade, extractPlaceholderName, linkUrlToPendingValue, dedupeFieldParameters } = require('./ruleBasedParameterizer');
 
 const PLACEHOLDER_PATTERN = /^\{\{.+\}\}$/;
 const PLACEHOLDER_CAPTURE_PATTERN = /^\{\{(.+)\}\}$/;
@@ -101,9 +101,14 @@ const upgradeLegacyWorkflow = ({ steps, parameters }) => {
     // done, and a stale link from an earlier field leaks into the next
     // unrelated click.
     if (step.type === 'calendar_date' || step.type === 'dynamic_click') {
-      pendingInputParamName = null;
+      // Already semantic, but still carries the same "this is what the live
+      // parameter produced" signal a fresh dynamic_click does — a click many
+      // steps back may have already been upgraded on a prior pass, and a
+      // navigation/new_page step further down still needs to see it.
+      const resolvedParamName = extractPlaceholderName(step.value);
+      pendingInputParamName = resolvedParamName;
       pendingInputSelector = null;
-      pendingInputValue = null;
+      pendingInputValue = resolvedParamName ? (defaultValueByParamName.get(resolvedParamName) ?? null) : null;
       return step;
     }
 
@@ -124,13 +129,38 @@ const upgradeLegacyWorkflow = ({ steps, parameters }) => {
       return workingStep;
     }
 
+    if (workingStep.type === 'navigation' || workingStep.type === 'new_page') {
+      // Same gap as the live parameterizer closes (see the matching branch
+      // in ruleBasedParameterizer.js): a value typed/clicked right before a
+      // navigation often survives verbatim into the URL it lands on (a
+      // search engine's "?q=", a site's own "?search="), but a navigation
+      // triggered by Enter/native form submit has no click event of its own
+      // to link from — so a legacy recording froze that URL as a literal
+      // forever. Link it retroactively here, exactly like a fresh recording
+      // would today.
+      const urlField = workingStep.type === 'navigation' ? 'value' : 'url';
+      const rawUrl = workingStep[urlField];
+      const linkedUrl = pendingInputParamName
+        ? linkUrlToPendingValue(rawUrl, pendingInputParamName, pendingInputValue)
+        : null;
+
+      pendingInputParamName = null;
+      pendingInputSelector = null;
+      pendingInputValue = null;
+
+      if (linkedUrl) {
+        changed = true;
+        return { ...workingStep, [urlField]: linkedUrl };
+      }
+      return workingStep;
+    }
+
     if (workingStep.type !== 'click' && workingStep.type !== 'dblclick') {
-      // Any other step type (scroll, touch, navigation, new_page, ...)
-      // closes the adjacency window just like a click would — see the
-      // matching comment in ruleBasedParameterizer.js. Without this, a
-      // click many steps later (after scrolling off to browse something
-      // unrelated) could inherit a stale link to a field typed into long
-      // before it.
+      // Any other step type (scroll, touch, ...) closes the adjacency
+      // window just like a click would — see the matching comment in
+      // ruleBasedParameterizer.js. Without this, a click many steps later
+      // (after scrolling off to browse something unrelated) could inherit a
+      // stale link to a field typed into long before it.
       pendingInputParamName = null;
       pendingInputSelector = null;
       pendingInputValue = null;
@@ -138,9 +168,11 @@ const upgradeLegacyWorkflow = ({ steps, parameters }) => {
     }
 
     const upgrade = buildDynamicClickUpgrade(workingStep, dynamicCountByPrefix, usedNames, { relatedParamName: pendingInputParamName, relatedParamValue: pendingInputValue });
-    pendingInputParamName = null;
+
+    const resolvedParamName = upgrade ? extractPlaceholderName(upgrade.step.value) : null;
+    pendingInputParamName = resolvedParamName;
     pendingInputSelector = null;
-    pendingInputValue = null;
+    pendingInputValue = resolvedParamName && typeof workingStep.value === 'string' ? workingStep.value.trim() : null;
 
     if (!upgrade) {
       return workingStep;
@@ -154,11 +186,22 @@ const upgradeLegacyWorkflow = ({ steps, parameters }) => {
     return upgrade.step;
   });
 
+  // Retroactive pass for the SAME field-value duplication ruleBasedParameterizer.js
+  // now prevents at recording time: an already-saved workflow may still carry
+  // two parameters for one real field (a browser's 'input' and its native
+  // 'change', each independently parameterized before this fold existed).
+  // eventIndex positions are unaffected by everything above (each step maps
+  // 1:1, in place, into nextSteps), so they're still valid against nextSteps.
+  const deduped = dedupeFieldParameters(nextParameters, nextSteps);
+  if (deduped.parameters.length !== nextParameters.length) {
+    changed = true;
+  }
+
   if (!changed) {
     return null;
   }
 
-  return { steps: nextSteps, parameters: nextParameters };
+  return { steps: deduped.steps, parameters: deduped.parameters };
 };
 
 module.exports = { upgradeLegacyWorkflow };
