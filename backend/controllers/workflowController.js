@@ -5,7 +5,7 @@ const { parameterizeWorkflowRuleBased, extractPlaceholderName } = require('../se
 const { buildApiDescription } = require('../services/apiDescriptionBuilder');
 const { saveWorkflow, getWorkflow, listWorkflows, setExtractionHint } = require('../services/workflowStore');
 const { runWorkflow, parseTargetDate } = require('../services/replayEngine');
-const { logRun, countForOwner } = require('../services/replayRunStore');
+const { logRun, countForOwner, listRecentForOwner } = require('../services/replayRunStore');
 const { buildMyApiRecord } = require('./myApisController');
 
 // A parameter's declared `type` is metadata for the UI and for this gate —
@@ -259,10 +259,16 @@ const updateExtractionHint = (req, res) => {
 // Read-only aggregate for the Creator dashboard's "Total API Runs" stat —
 // how many times *anyone* has actually run this creator's published
 // workflows. Doesn't touch parameterize/run/test at all, just queries
-// replay_runs (already written by executeAndRespond above).
+// replay_runs (already written by executeAndRespond above). recentRuns is
+// the same population, individual rows instead of a count, for the Creator
+// Analytics "Recent Activity" feed's "API run" entries.
 const myRunStats = (req, res) => {
   try {
-    return res.json({ success: true, totalRuns: countForOwner(req.user.id) });
+    return res.json({
+      success: true,
+      totalRuns: countForOwner(req.user.id),
+      recentRuns: listRecentForOwner(req.user.id, 8)
+    });
   } catch (err) {
     console.error('[Backend] myRunStats failed', err);
     return res.status(500).json({ success: false, message: 'Failed to load run stats.' });

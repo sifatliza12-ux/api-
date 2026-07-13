@@ -24,6 +24,18 @@ const countForOwnerStmt = db.prepare(`
   JOIN workflows w ON w.id = r.workflow_id
   WHERE w.owner_id = ? AND r.is_test = 0
 `);
+// Same population as countForOwner (real, non-test runs of this owner's
+// workflows) but the individual rows instead of just a count — powers the
+// Creator Analytics "Recent Activity" feed's "API run" entries. Read-only;
+// does not touch parameterize/run/test.
+const listRecentForOwnerStmt = db.prepare(`
+  SELECT r.created_at AS createdAt, r.success AS success, w.id AS workflowId, w.name AS workflowName
+  FROM replay_runs r
+  JOIN workflows w ON w.id = r.workflow_id
+  WHERE w.owner_id = ? AND r.is_test = 0
+  ORDER BY r.created_at DESC
+  LIMIT ?
+`);
 
 const logRun = ({ workflowId, triggeredByUserId, isTest, success, message, finalUrl, finalTitle, skippedSteps, stepLog, extractionMethod }) => {
   insertStmt.run({
@@ -52,4 +64,13 @@ const countByUser = (userId) => countByUserStmt.get(userId).count;
 
 const countForOwner = (ownerId) => countForOwnerStmt.get(ownerId).count;
 
-module.exports = { logRun, countByUser, countForOwner };
+const listRecentForOwner = (ownerId, limit = 8) => listRecentForOwnerStmt
+  .all(ownerId, limit)
+  .map((row) => ({
+    workflowId: String(row.workflowId),
+    workflowName: row.workflowName,
+    createdAt: row.createdAt,
+    success: Boolean(row.success)
+  }));
+
+module.exports = { logRun, countByUser, countForOwner, listRecentForOwner };

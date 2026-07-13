@@ -6,6 +6,7 @@
     <title>ForgeFlow — Analytics</title>
     <script src="../shared/theme.js"></script>
     <link rel="stylesheet" href="../my-apis/my-apis.css">
+    <link rel="stylesheet" href="../dashboard/dashboard.css">
     <link rel="stylesheet" href="../shared/nav.css">
     <link rel="stylesheet" href="analytics.css">
     <link rel="stylesheet" href="../shared/theme.css">
@@ -16,12 +17,13 @@
             <div class="brand-group">
                 <div class="brand-mark" aria-hidden="true">FF</div>
                 <div class="brand-copy">
-                    <p class="eyebrow">ForgeFlow · Creator</p>
+                    <p class="eyebrow" id="analytics-eyebrow">ForgeFlow · Analytics</p>
                     <h1>Analytics</h1>
                 </div>
             </div>
             <div class="topbar-actions">
-                <p class="topbar-subtitle">How your published APIs are performing across the Marketplace.</p>
+                <span class="role-badge" id="role-badge" hidden></span>
+                <p class="topbar-subtitle" id="topbar-subtitle">How your ForgeFlow activity is performing.</p>
                 <button type="button" id="refresh-btn" class="btn btn-secondary" aria-label="Refresh analytics">Refresh</button>
             </div>
         </header>
@@ -31,46 +33,120 @@
         <main class="page-content">
             <p class="usage-note" id="auth-note" hidden></p>
 
-            <section class="stats-grid analytics-stats-grid" aria-label="Creator statistics">
-                <article class="stat-card">
-                    <span class="stat-label">APIs Created</span>
-                    <strong id="stat-created">0</strong>
-                </article>
-                <article class="stat-card">
-                    <span class="stat-label">Published APIs</span>
-                    <strong id="stat-published">0</strong>
-                </article>
-                <article class="stat-card">
-                    <span class="stat-label">Draft APIs</span>
-                    <strong id="stat-drafts">0</strong>
-                </article>
-                <article class="stat-card">
-                    <span class="stat-label">Total Downloads</span>
-                    <strong id="stat-downloads">0</strong>
-                </article>
-                <article class="stat-card">
-                    <span class="stat-label">Total API Runs</span>
-                    <strong id="stat-runs">0</strong>
-                </article>
-                <article class="stat-card">
-                    <span class="stat-label">Average Rating</span>
-                    <strong id="stat-rating">—</strong>
-                </article>
-                <article class="stat-card stat-card--revenue">
-                    <span class="stat-label">Estimated Revenue <span class="stat-placeholder-tag">placeholder</span></span>
-                    <strong id="stat-revenue">$0</strong>
-                </article>
-            </section>
+            <!-- ==================== CREATOR ANALYTICS ==================== -->
+            <div id="creator-analytics-content" class="mode-content" hidden>
+                <section class="stats-grid analytics-stats-grid" aria-label="Creator statistics">
+                    <article class="stat-card">
+                        <span class="stat-card-icon" aria-hidden="true">🧩</span>
+                        <span class="stat-label">APIs Created</span>
+                        <strong id="stat-created">0</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-card-icon" aria-hidden="true">📤</span>
+                        <span class="stat-label">Published APIs</span>
+                        <strong id="stat-published">0</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-card-icon" aria-hidden="true">📝</span>
+                        <span class="stat-label">Draft APIs</span>
+                        <strong id="stat-drafts">0</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-card-icon" aria-hidden="true">⬇️</span>
+                        <span class="stat-label">Total Downloads</span>
+                        <strong id="stat-downloads">0</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-card-icon" aria-hidden="true">▶️</span>
+                        <span class="stat-label">Total API Runs</span>
+                        <strong id="stat-runs">0</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-card-icon" aria-hidden="true">⭐</span>
+                        <span class="stat-label">Average Rating</span>
+                        <strong id="stat-rating">—</strong>
+                    </article>
+                    <article class="stat-card stat-card--revenue">
+                        <span class="stat-card-icon" aria-hidden="true">💰</span>
+                        <span class="stat-label">Estimated Revenue <span class="stat-placeholder-tag">placeholder</span></span>
+                        <strong id="stat-revenue">$0</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-card-icon" aria-hidden="true">🔥</span>
+                        <span class="stat-label">Most Popular API</span>
+                        <strong id="stat-popular" class="stat-card-text">—</strong>
+                    </article>
+                </section>
 
-            <section class="marketplace-section" aria-label="Published API performance">
-                <div class="section-heading">
-                    <h2>Your Published APIs</h2>
-                    <span class="result-count" id="published-result-count"></span>
-                </div>
-                <div id="published-analytics-list" class="analytics-table"></div>
-            </section>
+                <section class="marketplace-section" aria-label="Published API performance">
+                    <div class="section-heading">
+                        <h2>Your Published APIs</h2>
+                        <span class="result-count" id="published-result-count"></span>
+                    </div>
+                    <div id="published-analytics-list" class="analytics-table"></div>
+                </section>
 
-            <p class="footer-note">Ratings and revenue are estimated for now — real payment and review data will replace these once they ship.</p>
+                <section class="marketplace-section" aria-label="Recent activity">
+                    <div class="section-heading">
+                        <h2>Recent Activity</h2>
+                    </div>
+                    <div id="activity-list" class="activity-list"></div>
+                </section>
+
+                <p class="footer-note">Ratings and revenue are estimated for now — real payment and review data will replace these once they ship.</p>
+            </div>
+
+            <!-- ==================== BUYER ANALYTICS ==================== -->
+            <div id="buyer-analytics-content" class="mode-content" hidden>
+                <section class="stats-grid analytics-stats-grid" aria-label="Buyer statistics">
+                    <article class="stat-card">
+                        <span class="stat-card-icon" aria-hidden="true">🛒</span>
+                        <span class="stat-label">APIs Purchased</span>
+                        <strong id="buyer-stat-purchased">0</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-card-icon" aria-hidden="true">▶️</span>
+                        <span class="stat-label">APIs Run</span>
+                        <strong id="buyer-stat-runs">0</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-card-icon" aria-hidden="true">🪪</span>
+                        <span class="stat-label">Subscription Status</span>
+                        <strong id="buyer-stat-subscription" class="stat-card-text">—</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-card-icon" aria-hidden="true">⚡</span>
+                        <span class="stat-label">Remaining Free Runs</span>
+                        <strong id="buyer-stat-remaining-runs">—</strong>
+                        <div class="progress-track"><div class="progress-fill" id="buyer-remaining-runs-fill" style="width: 0%"></div></div>
+                    </article>
+                </section>
+
+                <section class="marketplace-section" aria-label="Favorite categories">
+                    <div class="section-heading">
+                        <h2>Favorite Categories</h2>
+                    </div>
+                    <div id="favorite-categories-list" class="category-chip-row"></div>
+                </section>
+
+                <section class="buyer-content-grid" aria-label="Recently used and recommended APIs">
+                    <article class="buyer-card">
+                        <div class="section-heading">
+                            <h2>Recently Used APIs</h2>
+                        </div>
+                        <div id="buyer-recent-used-list" class="recent-apis-list"></div>
+                    </article>
+
+                    <article class="buyer-card">
+                        <div class="section-heading">
+                            <h2>Recommendations</h2>
+                        </div>
+                        <div id="buyer-recommended-list" class="recent-apis-list"></div>
+                    </article>
+                </section>
+
+                <p class="footer-note">Subscription and run limits reflect your real usage today — recommendations are ranked from live Marketplace data.</p>
+            </div>
         </main>
     </div>
 
