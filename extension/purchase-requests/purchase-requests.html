@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ForgeFlow — Purchased APIs</title>
+    <title>ForgeFlow — Purchase Requests</title>
     <script src="../shared/theme.js"></script>
     <link rel="stylesheet" href="../marketplace/marketplace.css">
     <link rel="stylesheet" href="../shared/nav.css">
+    <link rel="stylesheet" href="purchase-requests.css">
     <link rel="stylesheet" href="../shared/theme.css">
 </head>
 <body>
@@ -16,12 +17,12 @@
                 <div class="brand-mark" aria-hidden="true">FF</div>
                 <div class="brand-copy">
                     <p class="eyebrow">ForgeFlow</p>
-                    <h1>Purchased APIs</h1>
+                    <h1>Purchase Requests</h1>
                 </div>
             </div>
             <div class="topbar-actions">
-                <p class="topbar-subtitle">Every API you own — bought from the Marketplace or added for free — ready to run any time.</p>
-                <button type="button" id="refresh-btn" class="btn btn-secondary" aria-label="Refresh purchased APIs">Refresh</button>
+                <p class="topbar-subtitle">Review and approve buyer payment submissions for your paid APIs.</p>
+                <button type="button" id="refresh-btn" class="btn btn-secondary" aria-label="Refresh purchase requests">Refresh</button>
             </div>
         </header>
 
@@ -30,15 +31,21 @@
         <main class="page-content">
             <p class="usage-note" id="auth-note" hidden></p>
 
-            <section class="marketplace-section" aria-label="Your purchased APIs">
-                <div class="section-heading">
-                    <h2>Purchased APIs</h2>
-                    <span class="result-count" id="purchased-result-count"></span>
-                </div>
-                <div id="purchased-grid" class="marketplace-grid"></div>
-            </section>
+            <div class="chip-row" id="status-filter-chips" aria-label="Filter by status">
+                <button type="button" class="chip active" data-status="all">All</button>
+                <button type="button" class="chip" data-status="pending">Pending</button>
+                <button type="button" class="chip" data-status="verification_required">Verification Required</button>
+                <button type="button" class="chip" data-status="approved">Approved</button>
+                <button type="button" class="chip" data-status="rejected">Rejected</button>
+            </div>
 
-            <p class="footer-note">Looking for something new? Browse the Marketplace — every purchase you make shows up here automatically.</p>
+            <section class="marketplace-section" aria-label="Purchase requests">
+                <div class="section-heading">
+                    <h2>Requests</h2>
+                    <span class="result-count" id="requests-result-count"></span>
+                </div>
+                <div id="requests-list" class="requests-list"></div>
+            </section>
         </main>
     </div>
 
@@ -47,6 +54,6 @@
     <script src="../shared/nav.js"></script>
     <script src="../shared/preferences.js"></script>
     <script src="../shared/notifications.js"></script>
-    <script src="purchased-apis.js"></script>
+    <script src="purchase-requests.js"></script>
 </body>
 </html>

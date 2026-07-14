@@ -36,7 +36,7 @@ const popupApp = {
 
         let loginErrorMessage = null;
 
-        const AUTH_BASE_URL = 'http://localhost:5000/api/auth';
+        const AUTH_BASE_URL = `${window.FORGEFLOW_API_BASE}/api/auth`;
         const AUTH_STORAGE_KEY = 'forgeflow.auth';
 
         // chrome.storage.local (not .session) so a login survives closing and

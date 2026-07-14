@@ -18,6 +18,9 @@ const marketplaceRoutes = require('./routes/marketplace');
 const subscriptionRoutes = require('./routes/subscription');
 const myApisRoutes = require('./routes/myApis');
 const workflowRoutes = require('./routes/workflows');
+const purchaseRequestRoutes = require('./routes/purchaseRequests');
+const walletRoutes = require('./routes/wallet');
+const notificationRoutes = require('./routes/notifications');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -52,8 +55,14 @@ app.use('/subscription', subscriptionRoutes);
 app.use('/api', myApisRoutes);
 app.use('/api/workflows', workflowRoutes);
 
-// TODO: Add marketplace transactions and payment gateway hooks here (price
-// is persisted and displayed everywhere, but nothing enforces payment yet).
+// Manual-approval marketplace purchase workflow (Purchase Requests + Creator
+// Wallet). A real payment gateway would later plug in at
+// purchaseRequestController.approvePurchaseRequest — that's the single seam
+// where "creator clicks Approve" could become "gateway webhook confirms
+// payment" without changing anything else in this flow.
+app.use('/purchase-requests', purchaseRequestRoutes);
+app.use('/wallet', walletRoutes);
+app.use('/notifications', notificationRoutes);
 
 app.use(errorHandler);
 

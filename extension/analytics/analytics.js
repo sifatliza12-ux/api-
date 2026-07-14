@@ -14,7 +14,7 @@
  * the Dashboard/Settings pages).
  */
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = window.FORGEFLOW_API_BASE;
 const AUTH_STORAGE_KEY = 'forgeflow.auth';
 
 const escapeHtml = (str) => {

@@ -7,7 +7,7 @@
  * so the two nav destinations never drift out of sync with each other.
  */
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = window.FORGEFLOW_API_BASE;
 const AUTH_STORAGE_KEY = 'forgeflow.auth';
 
 const escapeHtml = (str) => {

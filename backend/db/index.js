@@ -87,6 +87,62 @@ db.exec(`
     UNIQUE(listing_id, buyer_id)
   );
 
+  -- Manual-approval purchase workflow for paid listings. Free items never
+  -- create a row here — they still go through the original, unchanged
+  -- marketplace_purchases instant-insert path. price is a snapshot (same
+  -- reasoning as marketplace_purchases.price_paid). status is the single
+  -- state machine driving both the buyer's My Purchases page and the
+  -- creator's Purchase Requests page: pending -> approved|rejected, or
+  -- pending -> verification_required -> pending (resubmit) -> ... This is
+  -- the exact seam a real payment gateway would plug into later (a webhook
+  -- calling the same approve function a creator's click calls today).
+  CREATE TABLE IF NOT EXISTS purchase_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    listing_id INTEGER NOT NULL REFERENCES marketplace_listings(id) ON DELETE CASCADE,
+    buyer_id INTEGER NOT NULL REFERENCES users(id),
+    creator_id INTEGER REFERENCES users(id),
+    price REAL NOT NULL DEFAULT 0,
+    payment_method TEXT NOT NULL,
+    transaction_id TEXT NOT NULL,
+    screenshot TEXT,
+    buyer_note TEXT,
+    creator_message TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    resolved_at TEXT
+  );
+
+  -- Append-only ledger row, written exactly once per approved purchase
+  -- request (see purchaseRequestController.approvePurchaseRequest). This is
+  -- what Wallet revenue/stat totals sum over — never edited or deleted
+  -- after creation, so it stays a trustworthy record even if a listing's
+  -- price or a request's other fields change later.
+  CREATE TABLE IF NOT EXISTS wallet_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    purchase_request_id INTEGER REFERENCES purchase_requests(id) ON DELETE CASCADE,
+    listing_id INTEGER NOT NULL REFERENCES marketplace_listings(id),
+    creator_id INTEGER NOT NULL REFERENCES users(id),
+    buyer_id INTEGER NOT NULL REFERENCES users(id),
+    amount REAL NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+
+  -- Generic notification feed for both creator and buyer events (new
+  -- purchase request, approved, rejected, verification required/resubmitted).
+  -- link is an extension-relative page path the bell dropdown can navigate
+  -- to when a notification is clicked.
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT,
+    link TEXT,
+    read INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS replay_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ForgeFlow — My Purchases</title>
+    <script src="../shared/theme.js"></script>
+    <link rel="stylesheet" href="../marketplace/marketplace.css">
+    <link rel="stylesheet" href="../purchase-requests/purchase-requests.css">
+    <link rel="stylesheet" href="../shared/nav.css">
+    <link rel="stylesheet" href="../shared/theme.css">
+</head>
+<body>
+    <div class="page-shell">
+        <header class="topbar">
+            <div class="brand-group">
+                <div class="brand-mark" aria-hidden="true">FF</div>
+                <div class="brand-copy">
+                    <p class="eyebrow">ForgeFlow</p>
+                    <h1>My Purchases</h1>
+                </div>
+            </div>
+            <div class="topbar-actions">
+                <p class="topbar-subtitle">Every purchase request you've submitted, and its current status.</p>
+                <button type="button" id="refresh-btn" class="btn btn-secondary" aria-label="Refresh my purchases">Refresh</button>
+            </div>
+        </header>
+
+        <nav class="app-nav" id="app-nav" aria-label="Primary navigation"></nav>
+
+        <main class="page-content">
+            <p class="usage-note" id="auth-note" hidden></p>
+
+            <div class="chip-row" id="status-filter-chips" aria-label="Filter by status">
+                <button type="button" class="chip active" data-status="all">All</button>
+                <button type="button" class="chip" data-status="pending">Pending Approval</button>
+                <button type="button" class="chip" data-status="verification_required">Verification Required</button>
+                <button type="button" class="chip" data-status="approved">Purchased</button>
+                <button type="button" class="chip" data-status="rejected">Rejected</button>
+            </div>
+
+            <section class="marketplace-section" aria-label="Purchase history">
+                <div class="section-heading">
+                    <h2>Purchase History</h2>
+                    <span class="result-count" id="requests-result-count"></span>
+                </div>
+                <div id="requests-list" class="requests-list"></div>
+            </section>
+
+            <p class="footer-note">Buying something new? Browse the <a href="#" id="marketplace-footer-link">Marketplace</a> — every purchase request you submit shows up here automatically.</p>
+        </main>
+    </div>
+
+    <script src="../shared/config.js"></script>
+    <script src="../shared/roles.js"></script>
+    <script src="../shared/nav.js"></script>
+    <script src="../shared/preferences.js"></script>
+    <script src="../shared/notifications.js"></script>
+    <script src="my-purchases.js"></script>
+</body>
+</html>

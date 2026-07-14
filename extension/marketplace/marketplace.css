@@ -448,6 +448,143 @@ h1, h2, h3, h4 {
     color: #dbeafe;
 }
 
+/* Purchase-request status ladder — shared by the Marketplace buy button,
+   My Purchases, Purchase Requests, and Wallet's Recent Transactions table so
+   the same status always reads the same color everywhere it appears. */
+.badge-status-pending {
+    background: rgba(251, 191, 36, 0.18);
+    color: #fde68a;
+}
+
+.badge-status-verification_required {
+    background: rgba(251, 146, 60, 0.2);
+    color: #ffd9b3;
+}
+
+.badge-status-approved {
+    background: rgba(34, 197, 94, 0.18);
+    color: #bbf7d0;
+}
+
+.badge-status-rejected {
+    background: rgba(248, 113, 113, 0.2);
+    color: #fecaca;
+}
+
+.btn:disabled,
+.btn[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+/* Purchase dialog form fields — payment method grid, transaction id/note
+   inputs, screenshot upload. Reuses .modal/.modal-scroll-body/.modal-actions
+   from the Modal section below. */
+.form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 14px;
+}
+
+.form-field-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.form-field-hint {
+    font-size: 11.5px;
+    color: var(--muted-2);
+}
+
+.form-input,
+.form-textarea {
+    font-family: inherit;
+    padding: 11px 13px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line);
+    background: var(--panel-strong);
+    color: var(--text);
+    font-size: 13.5px;
+}
+
+.form-input:focus,
+.form-textarea:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.34);
+}
+
+.form-textarea {
+    resize: vertical;
+    min-height: 64px;
+}
+
+.payment-method-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+}
+
+.payment-method-option {
+    font-family: inherit;
+    cursor: pointer;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+    text-align: center;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.payment-method-option:hover {
+    color: var(--text);
+}
+
+.payment-method-option.active {
+    color: var(--text);
+    background: rgba(139, 92, 246, 0.24);
+    border-color: rgba(255, 255, 255, 0.28);
+}
+
+.payment-instructions {
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--muted);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px dashed var(--line);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin: 10px 0 14px;
+}
+
+.screenshot-preview {
+    display: block;
+    max-width: 100%;
+    max-height: 160px;
+    margin-top: 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line);
+    cursor: zoom-in;
+}
+
+.creator-message-box {
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: #ffd9b3;
+    background: rgba(251, 146, 60, 0.12);
+    border: 1px dashed rgba(251, 146, 60, 0.4);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin: 10px 0;
+}
+
 .market-card-description {
     font-size: 13.5px;
     line-height: 1.55;

@@ -12,7 +12,7 @@
  * purchase is recorded, not this state machine.
  */
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = window.FORGEFLOW_API_BASE;
 const AUTH_STORAGE_KEY = 'forgeflow.auth';
 
 const escapeHtml = (str) => {
@@ -184,10 +184,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const isLoggedIn = () => Boolean(authHeaders.Authorization);
 
     // --- Card action state: every listing is in exactly one of these ---
+    // Paid items go through the manual-approval purchase-request workflow
+    // (see handlePurchase/openPurchaseDialog below), so a pending request
+    // shows "Pending Approval" instead of "Buy" until the creator resolves
+    // it. Free items never produce a purchase request — they stay on the
+    // original 'run'/'purchase' pair.
     const getCardAction = (it) => {
         if (isLoggedIn() && it.isOwnedByMe) return 'creator';
         if (isLoggedIn() && it.isPurchasedByMe) return 'run';
+        if (isLoggedIn() && it.myPurchaseRequestStatus === 'pending') return 'pending';
+        if (isLoggedIn() && it.myPurchaseRequestStatus === 'verification_required') return 'verification_required';
+        if (isLoggedIn() && it.myPurchaseRequestStatus === 'rejected') return 'rejected';
         return 'purchase';
+    };
+
+    const PURCHASE_REQUEST_STATUS_LABELS = {
+        pending: 'Pending Approval',
+        verification_required: 'Verification Required',
+        rejected: 'Purchase Rejected'
     };
 
     const buildMarketCardHtml = (it) => {
@@ -209,13 +223,21 @@ document.addEventListener('DOMContentLoaded', () => {
                </div>`
             : action === 'run'
                 ? `<button type="button" class="btn btn-primary market-run-btn">Run API</button>`
-                : `<button type="button" class="btn btn-primary market-buy-btn">${free ? 'Get for Free' : `Buy for $${it.price}`}</button>`;
+                : action === 'pending'
+                    ? `<button type="button" class="btn btn-secondary" disabled>Pending Approval</button>`
+                    : action === 'verification_required'
+                        ? `<button type="button" class="btn btn-secondary market-verify-btn">Verification Required</button>`
+                        : action === 'rejected'
+                            ? `<button type="button" class="btn btn-primary market-buy-btn">Purchase Rejected — Try Again</button>`
+                            : `<button type="button" class="btn btn-primary market-buy-btn">${free ? 'Get for Free' : `Buy for $${it.price}`}</button>`;
 
         const ownerBadgeHtml = action === 'creator'
             ? '<span class="badge badge-owner">Your Listing</span>'
             : action === 'run'
                 ? '<span class="badge badge-owned">Owned</span>'
-                : '';
+                : (action === 'pending' || action === 'verification_required' || action === 'rejected')
+                    ? `<span class="badge badge-status-${action}">${PURCHASE_REQUEST_STATUS_LABELS[action]}</span>`
+                    : '';
 
         return `
             <div class="market-card-top">
@@ -251,9 +273,17 @@ document.addEventListener('DOMContentLoaded', () => {
         alert(message || 'Log in from the ForgeFlow extension popup first.');
     };
 
+    // Free items: unchanged instant "charge and grant" — nothing about this
+    // path changed by the manual-approval workflow below. Paid items now
+    // open the Purchase dialog instead of buying instantly.
     const handlePurchase = async (item, onDone) => {
         if (!isLoggedIn()) {
             requireLogin('Log in from the ForgeFlow extension popup to purchase Marketplace APIs.');
+            return;
+        }
+
+        if (!isFreeItem(item)) {
+            openPurchaseDialog(item, onDone);
             return;
         }
 
@@ -275,13 +305,168 @@ document.addEventListener('DOMContentLoaded', () => {
                 marketplaceItems[idx].purchaseCount = (marketplaceItems[idx].purchaseCount || 0) + 1;
             }
 
-            alert(data.message || (isFreeItem(item) ? 'Added to your library.' : 'Purchase complete.'));
+            alert(data.message || 'Added to your library.');
             applyMarketplaceFilters();
             if (onDone) onDone();
         } catch (err) {
             console.error('[ForgeFlow][marketplace] purchase failed', err);
             alert('Unable to reach the ForgeFlow backend. Please try again.');
         }
+    };
+
+    // --- Purchase dialog (manual-approval flow for paid items) ---
+
+    const PAYMENT_METHODS = [
+        { value: 'bkash', label: 'bKash', instructions: 'Send Money to 01700-000000 (Personal), then enter the Transaction ID shown in your bKash confirmation SMS.' },
+        { value: 'nagad', label: 'Nagad', instructions: 'Send Money to 01700-000000 (Personal), then enter the Transaction ID shown in your Nagad confirmation SMS.' },
+        { value: 'rocket', label: 'Rocket', instructions: 'Send Money to 01700-000000-1 (Personal), then enter the Transaction ID shown in your Rocket confirmation SMS.' },
+        { value: 'bank_transfer', label: 'Bank Transfer', instructions: 'Transfer to ForgeFlow Ltd., Account No. 0000-1111-2222, DBBL. Enter the transfer reference/transaction ID from your bank receipt.' }
+    ];
+
+    const MAX_SCREENSHOT_BYTES = 3 * 1024 * 1024;
+
+    const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+    });
+
+    const openPurchaseDialog = (item, onDone) => {
+        let selectedMethod = PAYMENT_METHODS[0].value;
+        let screenshotDataUrl = null;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <h3>Purchase ${escapeHtml(item.name)}</h3>
+            <div class="modal-scroll-body">
+                <p><strong>Creator:</strong> ${escapeHtml(item.publisher || 'Unknown')} • <strong>Price:</strong> $${item.price}</p>
+
+                <div class="form-field">
+                    <span class="form-field-label">Payment Method</span>
+                    <div class="payment-method-grid" id="pd-method-grid">
+                        ${PAYMENT_METHODS.map((m, i) => `<button type="button" class="payment-method-option${i === 0 ? ' active' : ''}" data-method="${m.value}">${m.label}</button>`).join('')}
+                    </div>
+                </div>
+
+                <p class="payment-instructions" id="pd-instructions">${escapeHtml(PAYMENT_METHODS[0].instructions)}</p>
+
+                <div class="form-field">
+                    <label class="form-field-label" for="pd-transaction-id">Transaction ID <span aria-hidden="true">*</span></label>
+                    <input type="text" id="pd-transaction-id" class="form-input" placeholder="e.g. 8N7A3XZ9K1" required>
+                </div>
+
+                <div class="form-field">
+                    <span class="form-field-label">Payment Screenshot (optional)</span>
+                    <input type="file" id="pd-screenshot" class="form-input" accept="image/*">
+                    <span class="form-field-hint">Up to 3MB. Helps the creator verify your payment faster.</span>
+                    <img id="pd-screenshot-preview" class="screenshot-preview" style="display:none" alt="Screenshot preview">
+                </div>
+
+                <div class="form-field">
+                    <label class="form-field-label" for="pd-note">Note to Creator (optional)</label>
+                    <textarea id="pd-note" class="form-textarea" placeholder="Anything the creator should know about this payment..."></textarea>
+                </div>
+
+                <p class="form-field-hint" id="pd-error" style="color:#fecaca; display:none"></p>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" id="pd-submit">Submit Purchase Request</button>
+                <button class="btn btn-secondary modal-close">Cancel</button>
+            </div>
+        `;
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+        overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+        const methodGrid = overlay.querySelector('#pd-method-grid');
+        const instructionsEl = overlay.querySelector('#pd-instructions');
+        methodGrid.querySelectorAll('.payment-method-option').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                selectedMethod = btn.dataset.method;
+                methodGrid.querySelectorAll('.payment-method-option').forEach((b) => b.classList.remove('active'));
+                btn.classList.add('active');
+                const method = PAYMENT_METHODS.find((m) => m.value === selectedMethod);
+                instructionsEl.textContent = method ? method.instructions : '';
+            });
+        });
+
+        const screenshotInput = overlay.querySelector('#pd-screenshot');
+        const screenshotPreview = overlay.querySelector('#pd-screenshot-preview');
+        const errorEl = overlay.querySelector('#pd-error');
+
+        screenshotInput.addEventListener('change', async () => {
+            const file = screenshotInput.files && screenshotInput.files[0];
+            if (!file) { screenshotDataUrl = null; screenshotPreview.style.display = 'none'; return; }
+            if (file.size > MAX_SCREENSHOT_BYTES) {
+                errorEl.textContent = 'Screenshot is too large. Please choose an image under 3MB.';
+                errorEl.style.display = 'block';
+                screenshotInput.value = '';
+                screenshotDataUrl = null;
+                screenshotPreview.style.display = 'none';
+                return;
+            }
+            errorEl.style.display = 'none';
+            screenshotDataUrl = await readFileAsDataUrl(file);
+            screenshotPreview.src = screenshotDataUrl;
+            screenshotPreview.style.display = 'block';
+        });
+
+        const submitBtn = overlay.querySelector('#pd-submit');
+        submitBtn.addEventListener('click', async () => {
+            const transactionId = overlay.querySelector('#pd-transaction-id').value.trim();
+            const buyerNote = overlay.querySelector('#pd-note').value.trim();
+
+            if (!transactionId) {
+                errorEl.textContent = 'Transaction ID is required.';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Submitting…';
+
+            try {
+                const resp = await fetch(`${API_BASE}/marketplace/${item.id}/purchase-request`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...authHeaders },
+                    body: JSON.stringify({
+                        paymentMethod: selectedMethod,
+                        transactionId,
+                        screenshot: screenshotDataUrl,
+                        buyerNote
+                    })
+                });
+                const data = await resp.json().catch(() => ({}));
+
+                if (!resp.ok) {
+                    errorEl.textContent = data.message || 'Could not submit purchase request. Please try again.';
+                    errorEl.style.display = 'block';
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Submit Purchase Request';
+                    return;
+                }
+
+                const idx = marketplaceItems.findIndex((m) => m.id === item.id);
+                if (idx !== -1) {
+                    marketplaceItems[idx].myPurchaseRequestStatus = 'pending';
+                }
+                applyMarketplaceFilters();
+                overlay.remove();
+                alert(data.message || 'Purchase request submitted. The creator will review it shortly.');
+                if (onDone) onDone();
+            } catch (err) {
+                console.error('[ForgeFlow][marketplace] purchase-request failed', err);
+                errorEl.textContent = 'Unable to reach the ForgeFlow backend. Please try again.';
+                errorEl.style.display = 'block';
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Submit Purchase Request';
+            }
+        });
     };
 
     const buildRunResultHtml = (data) => {
@@ -479,6 +664,16 @@ document.addEventListener('DOMContentLoaded', () => {
             runBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
                 handleRunApi(it);
+            });
+        }
+
+        const verifyBtn = card.querySelector('.market-verify-btn');
+        if (verifyBtn) {
+            verifyBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
+                    window.location.href = chrome.runtime.getURL('my-purchases/my-purchases.html');
+                }
             });
         }
 
@@ -686,7 +881,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button class="btn btn-primary run-api">Run API</button>
                 <button class="btn btn-secondary modal-close">Close</button>
             `
-                : `
+                : action === 'pending'
+                    ? `
+                <button class="btn btn-secondary" disabled>Pending Approval</button>
+                <button class="btn btn-secondary modal-close">Close</button>
+            `
+                    : action === 'verification_required'
+                        ? `
+                <button class="btn btn-primary market-verify">Verification Required — Resubmit</button>
+                <button class="btn btn-secondary modal-close">Close</button>
+            `
+                        : action === 'rejected'
+                            ? `
+                <button class="btn btn-primary market-buy">Purchase Rejected — Try Again</button>
+                <button class="btn btn-secondary modal-close">Close</button>
+            `
+                            : `
                 <button class="btn btn-primary market-buy">${free ? 'Get for Free' : `Buy for $${item.price}`}</button>
                 <button class="btn btn-secondary modal-close">Close</button>
             `;
@@ -728,6 +938,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const runBtn = overlay.querySelector('.run-api');
         if (runBtn) {
             runBtn.addEventListener('click', () => handleRunApi(item));
+        }
+
+        const verifyBtn = overlay.querySelector('.market-verify');
+        if (verifyBtn) {
+            verifyBtn.addEventListener('click', () => {
+                if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
+                    window.location.href = chrome.runtime.getURL('my-purchases/my-purchases.html');
+                }
+            });
         }
 
         const editBtn = overlay.querySelector('.edit-listing');

@@ -1,5 +1,6 @@
 const marketplaceStore = require('../services/marketplaceStore');
 const marketplacePurchaseStore = require('../services/marketplacePurchaseStore');
+const purchaseRequestStore = require('../services/purchaseRequestStore');
 
 // optionalAuth (routes/marketplace.js) means req.user may or may not be set.
 // purchaseCount is public on every listing (same idea as a storefront
@@ -18,11 +19,22 @@ const listMarketplaceItems = (req, res) => {
   }
 
   const purchasedIds = new Set(marketplacePurchaseStore.listPurchasedListingIds(req.user.id));
-  const enriched = items.map((item) => ({
-    ...item,
-    isOwnedByMe: item.ownerId === req.user.id,
-    isPurchasedByMe: purchasedIds.has(item.id)
-  }));
+  const enriched = items.map((item) => {
+    const isPurchasedByMe = purchasedIds.has(item.id);
+    // Only surfaced when access isn't already granted — an old resolved
+    // request should never mask a fresh Buy button once someone owns the
+    // listing (see purchaseRequestStore.latestActiveForListingBuyer, which
+    // already excludes 'approved').
+    const activeRequest = !isPurchasedByMe
+      ? purchaseRequestStore.latestActiveForListingBuyer(item.id, req.user.id)
+      : null;
+    return {
+      ...item,
+      isOwnedByMe: item.ownerId === req.user.id,
+      isPurchasedByMe,
+      myPurchaseRequestStatus: activeRequest ? activeRequest.status : null
+    };
+  });
 
   return res.json(enriched);
 };

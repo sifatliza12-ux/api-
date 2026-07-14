@@ -7,7 +7,7 @@
  * Marketplace itself behind a subscription tier.
  */
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = window.FORGEFLOW_API_BASE;
 const AUTH_STORAGE_KEY = 'forgeflow.auth';
 
 // Same storage key/shape popup.js writes on login — read-only here since
@@ -88,7 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
             setUsageNote(null);
         } catch (err) {
             console.error('[ForgeFlow][plans] failed to load usage', err);
-            setUsageNote('Unable to reach the ForgeFlow backend. Is it running on http://localhost:5000?');
+            setUsageNote(`Unable to reach the ForgeFlow backend. Is it running at ${API_BASE}?`);
         }
     };
 

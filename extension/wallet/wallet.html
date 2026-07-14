@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ForgeFlow — Wallet</title>
+    <script src="../shared/theme.js"></script>
+    <link rel="stylesheet" href="../marketplace/marketplace.css">
+    <link rel="stylesheet" href="../dashboard/dashboard.css">
+    <link rel="stylesheet" href="../shared/nav.css">
+    <link rel="stylesheet" href="wallet.css">
+    <link rel="stylesheet" href="../shared/theme.css">
+</head>
+<body>
+    <div class="page-shell">
+        <header class="topbar">
+            <div class="brand-group">
+                <div class="brand-mark" aria-hidden="true">FF</div>
+                <div class="brand-copy">
+                    <p class="eyebrow">ForgeFlow</p>
+                    <h1>Wallet</h1>
+                </div>
+            </div>
+            <div class="topbar-actions">
+                <p class="topbar-subtitle">Your earnings and sales, all in one place.</p>
+                <button type="button" id="refresh-btn" class="btn btn-secondary" aria-label="Refresh wallet">Refresh</button>
+            </div>
+        </header>
+
+        <nav class="app-nav" id="app-nav" aria-label="Primary navigation"></nav>
+
+        <main class="page-content">
+            <p class="usage-note" id="auth-note" hidden></p>
+
+            <section class="marketplace-section" aria-label="Wallet overview">
+                <div class="section-heading">
+                    <h2>Overview</h2>
+                </div>
+                <div class="stats-grid" id="wallet-stats-grid">
+                    <article class="stat-card stat-card--revenue">
+                        <span class="stat-label">Total Revenue <span class="stat-placeholder-tag">placeholder</span></span>
+                        <strong id="stat-total-revenue">$0</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-label">Pending Revenue <span class="stat-placeholder-tag">placeholder</span></span>
+                        <strong id="stat-pending-revenue">$0</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-label">Completed Sales</span>
+                        <strong id="stat-completed-sales">0</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-label">Pending Purchase Requests</span>
+                        <strong id="stat-pending-requests">0</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-label">Total APIs Sold</span>
+                        <strong id="stat-apis-sold">0</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-label">Average Selling Price</span>
+                        <strong id="stat-avg-price">$0</strong>
+                    </article>
+                    <article class="stat-card">
+                        <span class="stat-label">Most Purchased API</span>
+                        <strong id="stat-most-purchased" class="stat-card-text">—</strong>
+                    </article>
+                </div>
+            </section>
+
+            <section class="marketplace-section" aria-label="Recent transactions">
+                <div class="section-heading">
+                    <h2>Recent Transactions</h2>
+                    <span class="result-count" id="transactions-result-count"></span>
+                </div>
+                <div class="transaction-row transaction-row-header" aria-hidden="true">
+                    <span>Buyer</span>
+                    <span>API Purchased</span>
+                    <span>Amount</span>
+                    <span>Status</span>
+                    <span>Date</span>
+                </div>
+                <div id="transactions-table" class="transactions-table"></div>
+            </section>
+
+            <p class="footer-note">Revenue figures are simulated until a real payment gateway is connected — approvals and sale counts are already real.</p>
+        </main>
+    </div>
+
+    <script src="../shared/config.js"></script>
+    <script src="../shared/roles.js"></script>
+    <script src="../shared/nav.js"></script>
+    <script src="../shared/preferences.js"></script>
+    <script src="../shared/notifications.js"></script>
+    <script src="wallet.js"></script>
+</body>
+</html>

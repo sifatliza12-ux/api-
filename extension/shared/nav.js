@@ -20,15 +20,18 @@
         { key: 'record', label: 'Record Workflow', icon: '⏺', path: 'dashboard/dashboard.html#record-banner' },
         { key: 'marketplace', label: 'Marketplace', icon: '◫', path: 'marketplace/marketplace.html' },
         { key: 'purchased-apis', label: 'Purchased APIs', icon: '🛒', path: 'purchased-apis/purchased-apis.html' },
+        { key: 'my-purchases', label: 'My Purchases', icon: '🧾', path: 'my-purchases/my-purchases.html' },
         { key: 'my-apis', label: 'My APIs', icon: '✦', path: 'my-apis/my-apis.html' },
         { key: 'published-apis', label: 'Published APIs', icon: '📦', path: 'my-apis/my-apis.html?filter=published' },
+        { key: 'purchase-requests', label: 'Purchase Requests', icon: '📥', path: 'purchase-requests/purchase-requests.html' },
+        { key: 'wallet', label: 'Wallet', icon: '💰', path: 'wallet/wallet.html' },
         { key: 'analytics', label: 'Analytics', icon: '📊', path: 'analytics/analytics.html' },
         { key: 'plans', label: 'Plans & Pricing', icon: '◎', path: 'plans/plans.html' },
         { key: 'settings', label: 'Settings', icon: '⚙', path: 'settings/settings.html' }
     ];
 
-    const CREATOR_PRIORITY = ['dashboard', 'record', 'my-apis', 'published-apis', 'analytics', 'plans', 'settings'];
-    const BUYER_PRIORITY = ['dashboard', 'marketplace', 'purchased-apis', 'plans', 'settings'];
+    const CREATOR_PRIORITY = ['dashboard', 'record', 'my-apis', 'published-apis', 'purchase-requests', 'wallet', 'analytics', 'plans', 'settings'];
+    const BUYER_PRIORITY = ['dashboard', 'marketplace', 'purchased-apis', 'my-purchases', 'plans', 'settings'];
 
     const AUTH_STORAGE_KEY = 'forgeflow.auth';
 

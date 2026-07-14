@@ -3,6 +3,8 @@
  * Single source of truth for the recording system.
  */
 
+importScripts('../shared/config.js');
+
 console.log('[Recorder][service-worker] initialized');
 
 const STORAGE_KEY = 'forgeflow.recorder.state';
@@ -106,7 +108,7 @@ const sendToTab = async (tabId, message) => {
     });
 };
 
-const BACKEND_BASE_URL = 'http://localhost:5000';
+const BACKEND_BASE_URL = self.FORGEFLOW_API_BASE;
 const AUTH_STORAGE_KEY = 'forgeflow.auth';
 
 // Recording/API generation now requires an account (workflows are owned per

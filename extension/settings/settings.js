@@ -10,7 +10,7 @@
  * the task brief calls for elsewhere ("local preferences for now").
  */
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = window.FORGEFLOW_API_BASE;
 const AUTH_STORAGE_KEY = 'forgeflow.auth';
 const PROFILE_OVERRIDES_KEY = 'forgeflow.profileOverrides';
 const NOTIFICATION_PREFS_KEY = 'forgeflow.notificationPrefs';
