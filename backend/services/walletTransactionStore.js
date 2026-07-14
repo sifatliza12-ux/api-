@@ -6,9 +6,14 @@ const db = require('../db');
 // this table (and over pending purchase_requests for pending-revenue), not
 // client-side estimates — the only thing still "placeholder" about them is
 // that no real currency has moved through a payment gateway yet.
+// ON CONFLICT DO NOTHING (backed by the unique index on purchase_request_id
+// in db/index.js) — same idempotency pattern as marketplacePurchaseStore's
+// insert, so calling create() twice for the same request is a harmless
+// no-op instead of double-crediting the creator's wallet.
 const insertStmt = db.prepare(`
   INSERT INTO wallet_transactions (purchase_request_id, listing_id, creator_id, buyer_id, amount, created_at)
   VALUES (@purchaseRequestId, @listingId, @creatorId, @buyerId, @amount, @createdAt)
+  ON CONFLICT(purchase_request_id) DO NOTHING
 `);
 
 const totalRevenueStmt = db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM wallet_transactions WHERE creator_id = ?');
@@ -24,8 +29,10 @@ const mostPurchasedStmt = db.prepare(`
 const distinctApisSoldStmt = db.prepare('SELECT COUNT(DISTINCT listing_id) AS count FROM wallet_transactions WHERE creator_id = ?');
 const listRecentForCreatorStmt = db.prepare('SELECT * FROM wallet_transactions WHERE creator_id = ? ORDER BY created_at DESC LIMIT ?');
 
+const getByPurchaseRequestIdStmt = db.prepare('SELECT * FROM wallet_transactions WHERE purchase_request_id = ?');
+
 const create = ({ purchaseRequestId, listingId, creatorId, buyerId, amount }) => {
-  const result = insertStmt.run({
+  insertStmt.run({
     purchaseRequestId: Number(purchaseRequestId),
     listingId: Number(listingId),
     creatorId: Number(creatorId),
@@ -33,7 +40,9 @@ const create = ({ purchaseRequestId, listingId, creatorId, buyerId, amount }) =>
     amount: Number(amount) || 0,
     createdAt: new Date().toISOString()
   });
-  return db.prepare('SELECT * FROM wallet_transactions WHERE id = ?').get(result.lastInsertRowid);
+  // Queried by purchase_request_id (not lastInsertRowid) so this returns the
+  // existing row correctly even when ON CONFLICT DO NOTHING skipped the insert.
+  return getByPurchaseRequestIdStmt.get(Number(purchaseRequestId));
 };
 
 const totalRevenueForCreator = (creatorId) => totalRevenueStmt.get(Number(creatorId)).total;

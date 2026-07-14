@@ -93,10 +93,14 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
     };
 
+    // Screenshot is buyer-submitted data rendered as an <img src> — escaped
+    // like every other user-supplied field so a malformed/malicious value
+    // can't break out of the attribute (the backend also validates it's a
+    // real image data URL, but this page never trusts that alone).
     const openScreenshotViewer = (src) => {
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
-        overlay.innerHTML = `<img src="${src}" style="max-width:100%; max-height:90vh; border-radius: var(--radius-lg);" alt="Payment screenshot">`;
+        overlay.innerHTML = `<img src="${escapeHtml(src)}" style="max-width:100%; max-height:90vh; border-radius: var(--radius-lg);" alt="Payment screenshot">`;
         overlay.addEventListener('click', () => overlay.remove());
         document.body.appendChild(overlay);
     };
@@ -135,7 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="form-field-label">Payment Screenshot (optional)</span>
                     <input type="file" id="pf-screenshot" class="form-input" accept="image/*">
                     <span class="form-field-hint">Up to 3MB.</span>
-                    <img id="pf-screenshot-preview" class="screenshot-preview" style="${screenshotDataUrl ? '' : 'display:none'}" src="${screenshotDataUrl || ''}" alt="Screenshot preview">
+                    <img id="pf-screenshot-preview" class="screenshot-preview" style="${screenshotDataUrl ? '' : 'display:none'}" src="${escapeHtml(screenshotDataUrl || '')}" alt="Screenshot preview">
                 </div>
 
                 <div class="form-field">
@@ -293,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="request-detail-value">${formatDate(request.createdAt)}</span>
                 </div>
             </div>
-            ${request.screenshot ? `<img src="${request.screenshot}" class="screenshot-preview req-screenshot" alt="Payment screenshot" title="Click to enlarge">` : ''}
+            ${request.screenshot ? `<img src="${escapeHtml(request.screenshot)}" class="screenshot-preview req-screenshot" alt="Payment screenshot" title="Click to enlarge">` : ''}
             ${request.buyerNote ? `<p class="request-note"><strong>Your note:</strong> ${escapeHtml(request.buyerNote)}</p>` : ''}
             ${request.creatorMessage ? `<p class="creator-message-box"><strong>Creator message:</strong> ${escapeHtml(request.creatorMessage)}</p>` : ''}
             ${actionsHtml}

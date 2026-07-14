@@ -192,4 +192,12 @@ addColumnIfMissing('workflows', 'extraction_hint TEXT');
 // call the underlying workflow.
 addColumnIfMissing('marketplace_listings', 'endpoint TEXT');
 
+// At most one ledger row per approved purchase request — belt-and-braces
+// against ever double-crediting a creator's wallet if an approve action is
+// ever triggered twice for the same request (double-click, retried request,
+// etc.). CREATE UNIQUE INDEX IF NOT EXISTS is safe to (re)run on a database
+// that already has rows, unlike a UNIQUE column constraint added via ALTER
+// TABLE, which SQLite doesn't support.
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_transactions_purchase_request_id ON wallet_transactions(purchase_request_id)');
+
 module.exports = db;

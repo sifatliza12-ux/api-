@@ -10,6 +10,14 @@ const PAYMENT_METHODS = ['bkash', 'nagad', 'rocket', 'bank_transfer'];
 // generous for a payment-confirmation screenshot without letting the
 // (already-raised) 50mb JSON body limit be the only guard.
 const MAX_SCREENSHOT_LENGTH = 4 * 1024 * 1024;
+// Screenshot must be a well-formed base64 image data URL — rejects anything
+// else outright (a client that skips the frontend entirely could otherwise
+// post arbitrary text into this field, which is later rendered as an <img
+// src> in the creator/buyer UI; raster-only, no svg+xml, which can carry
+// script).
+const SCREENSHOT_DATA_URL_RE = /^data:image\/(png|jpe?g|gif|webp|bmp);base64,[A-Za-z0-9+/]+=*$/i;
+
+const isValidScreenshot = (screenshot) => SCREENSHOT_DATA_URL_RE.test(String(screenshot));
 
 const withListingInfo = (request) => {
   const listing = marketplaceStore.getById(request.listingId);
@@ -54,8 +62,13 @@ const createPurchaseRequest = (req, res) => {
     if (!transactionId || !String(transactionId).trim()) {
       return res.status(400).json({ success: false, message: 'Transaction ID is required.' });
     }
-    if (screenshot && String(screenshot).length > MAX_SCREENSHOT_LENGTH) {
-      return res.status(400).json({ success: false, message: 'Screenshot is too large. Please upload an image under 3MB.' });
+    if (screenshot) {
+      if (String(screenshot).length > MAX_SCREENSHOT_LENGTH) {
+        return res.status(400).json({ success: false, message: 'Screenshot is too large. Please upload an image under 3MB.' });
+      }
+      if (!isValidScreenshot(screenshot)) {
+        return res.status(400).json({ success: false, message: 'Screenshot must be a valid image.' });
+      }
     }
 
     const existingActive = purchaseRequestStore.latestActiveForListingBuyer(listing.id, req.user.id);
@@ -130,11 +143,16 @@ const approvePurchaseRequest = (req, res) => {
     const authError = assertCreatorOwnsRequest(request, req);
     if (authError) return res.status(authError.status).json({ success: false, message: authError.message });
 
-    if (request.status === 'approved') {
-      return res.json({ success: true, message: 'Already approved.', request });
-    }
+    // approveIfNotApproved is the single atomic point deciding whether this
+    // call actually performs the approval — a duplicated approve action
+    // (double-click, retried request) sees `false` here and skips granting
+    // access/crediting the wallet/notifying the buyer a second time.
+    const didApprove = purchaseRequestStore.approveIfNotApproved(request.id);
+    const updated = purchaseRequestStore.getById(request.id);
 
-    const updated = purchaseRequestStore.setStatus(request.id, 'approved', { resolvedAt: new Date().toISOString() });
+    if (!didApprove) {
+      return res.json({ success: true, message: 'Already approved.', request: updated });
+    }
 
     // This is the exact call the existing (unchanged) instant-purchase flow
     // already uses to grant access — approving a request now drives the same
@@ -241,8 +259,13 @@ const resubmitPurchaseRequest = (req, res) => {
     if (!transactionId || !String(transactionId).trim()) {
       return res.status(400).json({ success: false, message: 'Transaction ID is required.' });
     }
-    if (screenshot && String(screenshot).length > MAX_SCREENSHOT_LENGTH) {
-      return res.status(400).json({ success: false, message: 'Screenshot is too large. Please upload an image under 3MB.' });
+    if (screenshot) {
+      if (String(screenshot).length > MAX_SCREENSHOT_LENGTH) {
+        return res.status(400).json({ success: false, message: 'Screenshot is too large. Please upload an image under 3MB.' });
+      }
+      if (!isValidScreenshot(screenshot)) {
+        return res.status(400).json({ success: false, message: 'Screenshot must be a valid image.' });
+      }
     }
 
     const updated = purchaseRequestStore.resubmit(request.id, {

@@ -46,6 +46,16 @@ const updateStatusStmt = db.prepare(`
   SET status = @status, creator_message = @creatorMessage, updated_at = @updatedAt, resolved_at = @resolvedAt
   WHERE id = @id
 `);
+// Conditional on "not already approved" so this is the single point that
+// decides whether an approve action actually happens — info.changes tells
+// the caller whether THIS call performed the transition, so a duplicated
+// approve (double-click, retried request) can't grant access/credit the
+// wallet twice.
+const approveIfNotApprovedStmt = db.prepare(`
+  UPDATE purchase_requests
+  SET status = 'approved', updated_at = @updatedAt, resolved_at = @resolvedAt
+  WHERE id = @id AND status != 'approved'
+`);
 const resubmitStmt = db.prepare(`
   UPDATE purchase_requests
   SET transaction_id = @transactionId, screenshot = @screenshot, buyer_note = @buyerNote,
@@ -61,6 +71,15 @@ const pendingCountForCreatorStmt = db.prepare(`
 const pendingRevenueForCreatorStmt = db.prepare(`
   SELECT COALESCE(SUM(price), 0) AS total FROM purchase_requests
   WHERE creator_id = ? AND status IN ('pending', 'verification_required')
+`);
+// Used to block removing a listing out from under a buyer whose payment is
+// still awaiting a decision — marketplace_listings -> purchase_requests is
+// ON DELETE CASCADE, so without this check a creator could silently delete
+// a listing (and, with it, any buyer's still-open purchase request) with no
+// warning to either side.
+const hasPendingForListingStmt = db.prepare(`
+  SELECT COUNT(*) AS count FROM purchase_requests
+  WHERE listing_id = ? AND status IN ('pending', 'verification_required')
 `);
 
 const create = ({ listingId, buyerId, creatorId, price, paymentMethod, transactionId, screenshot, buyerNote }) => {
@@ -112,6 +131,19 @@ const setStatus = (id, status, { creatorMessage = '', resolvedAt = null } = {}) 
   return getById(id);
 };
 
+// Returns true only if this call actually flipped the status to 'approved'
+// (false if it was already approved) — the controller uses that to decide
+// whether to run the once-only side effects (grant access, credit wallet,
+// notify buyer) at all.
+const approveIfNotApproved = (id) => {
+  const info = approveIfNotApprovedStmt.run({
+    id: Number(id),
+    updatedAt: new Date().toISOString(),
+    resolvedAt: new Date().toISOString()
+  });
+  return info.changes > 0;
+};
+
 // Only meaningful from 'verification_required' — enforced by the controller,
 // not here, so this store stays a plain data layer.
 const resubmit = (id, { transactionId, screenshot, buyerNote }) => {
@@ -131,6 +163,9 @@ const pendingCountForCreator = (creatorId) => pendingCountForCreatorStmt.get(Num
 
 const pendingRevenueForCreator = (creatorId) => pendingRevenueForCreatorStmt.get(Number(creatorId)).total;
 
+const hasPendingForListing = (listingId) =>
+  hasPendingForListingStmt.get(Number(listingId)).count > 0;
+
 module.exports = {
   create,
   getById,
@@ -138,7 +173,9 @@ module.exports = {
   listForCreator,
   latestActiveForListingBuyer,
   setStatus,
+  approveIfNotApproved,
   resubmit,
   pendingCountForCreator,
-  pendingRevenueForCreator
+  pendingRevenueForCreator,
+  hasPendingForListing
 };

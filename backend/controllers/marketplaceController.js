@@ -131,6 +131,15 @@ const removeMarketplaceItem = (req, res) => {
       return res.status(403).json({ success: false, message: 'Only this listing\'s creator can remove it.' });
     }
 
+    // A listing's purchase_requests cascade-delete with it — removing one
+    // while a buyer's payment is still awaiting a decision would silently
+    // discard their pending (or "needs verification") request with no
+    // explanation on either side. Block removal until those are resolved
+    // (approved or rejected) instead.
+    if (purchaseRequestStore.hasPendingForListing(req.params.id)) {
+      return res.status(409).json({ success: false, message: 'This listing has purchase requests awaiting your decision. Approve or reject them before removing it.' });
+    }
+
     const removed = marketplaceStore.removeById(req.params.id);
     if (!removed) {
       return res.status(404).json({ success: false, message: 'Item not found' });
