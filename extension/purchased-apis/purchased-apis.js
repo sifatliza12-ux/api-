@@ -98,6 +98,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const authNote = document.getElementById('auth-note');
     const purchasedGrid = document.getElementById('purchased-grid');
     const purchasedResultCount = document.getElementById('purchased-result-count');
+    const purchaseHistoryHintLink = document.getElementById('purchase-history-hint-link');
+
+    if (purchaseHistoryHintLink && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
+        purchaseHistoryHintLink.href = chrome.runtime.getURL('my-purchases/my-purchases.html');
+    }
 
     let purchasedItems = [];
     let authHeaders = {};
@@ -119,11 +124,15 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${statusLine}${resultsHtml}`;
     };
 
-    const handleRunApi = async (item) => {
+    const handleRunApi = async (item, btn) => {
         if (!item.endpoint) {
             alert('This API does not have a runnable endpoint yet.');
             return;
         }
+
+        // Disabled for the duration of the run so a rapid double-click can't
+        // open two modals / fire two concurrent runs.
+        if (btn) btn.disabled = true;
 
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
@@ -143,6 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.appendChild(overlay);
         overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        if (btn) btn.disabled = false;
 
         const resultEl = overlay.querySelector('.run-result');
         resultEl.style.display = 'block';
@@ -165,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (err) {
             resultEl.className = 'run-result run-result--error';
-            resultEl.textContent = `✗ Could not reach the backend: ${err.message}`;
+            resultEl.textContent = '✗ Could not reach the ForgeFlow server. Please try again.';
         }
     };
 
@@ -204,7 +214,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.appendChild(overlay);
         overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-        overlay.querySelector('.run-api').addEventListener('click', () => handleRunApi(item));
+        const detailsRunBtn = overlay.querySelector('.run-api');
+        detailsRunBtn.addEventListener('click', () => handleRunApi(item, detailsRunBtn));
     };
 
     const buildPurchasedCardHtml = (it) => `
@@ -252,9 +263,10 @@ document.addEventListener('DOMContentLoaded', () => {
             card.className = 'market-card';
             card.dataset.id = it.id;
             card.innerHTML = buildPurchasedCardHtml(it);
-            card.querySelector('.purchased-run-btn').addEventListener('click', (event) => {
+            const runBtn = card.querySelector('.purchased-run-btn');
+            runBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
-                handleRunApi(it);
+                handleRunApi(it, runBtn);
             });
             card.querySelector('.purchased-details-btn').addEventListener('click', (event) => {
                 event.stopPropagation();

@@ -104,7 +104,8 @@ document.addEventListener('DOMContentLoaded', () => {
         overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
-        overlay.querySelector('#msg-dialog-confirm').addEventListener('click', async () => {
+        const confirmBtn = overlay.querySelector('#msg-dialog-confirm');
+        confirmBtn.addEventListener('click', async () => {
             const text = overlay.querySelector('#msg-dialog-text').value.trim();
             const errorEl = overlay.querySelector('#msg-dialog-error');
             if (required && !text) {
@@ -112,26 +113,46 @@ document.addEventListener('DOMContentLoaded', () => {
                 errorEl.style.display = 'block';
                 return;
             }
-            await onConfirm(text, overlay);
+            errorEl.style.display = 'none';
+            confirmBtn.disabled = true;
+            const originalLabel = confirmBtn.textContent;
+            confirmBtn.textContent = 'Please wait…';
+            try {
+                await onConfirm(text, overlay, errorEl);
+            } finally {
+                // If onConfirm succeeded it already removed the overlay, so
+                // this is a no-op; if it failed, re-enable so the user can
+                // fix the message and try again instead of being stuck.
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = originalLabel;
+            }
         });
     };
 
-    const handleApprove = async (request) => {
+    const showDialogError = (errorEl, message) => {
+        if (!errorEl) { alert(message); return; }
+        errorEl.textContent = message;
+        errorEl.style.display = 'block';
+    };
+
+    const handleApprove = async (request, btn) => {
         if (!confirm(`Approve this purchase request from ${request.buyerName}? The buyer will immediately get access to "${request.listingName}".`)) return;
+        if (btn) btn.disabled = true;
         try {
             const { ok, data } = await fetchJson(`${API_BASE}/purchase-requests/${request.id}/approve`, {
                 method: 'POST',
                 headers: authHeaders
             });
             if (!ok) {
-                alert(data.message || 'Failed to approve this request.');
+                alert(data.message || 'Could not approve this request. Please try again.');
+                if (btn) btn.disabled = false;
                 return;
             }
-            alert('Purchase approved.');
             loadRequests();
         } catch (err) {
             console.error('[ForgeFlow][purchase-requests] approve failed', err);
-            alert('Unable to reach the ForgeFlow backend. Please try again.');
+            alert('Could not reach the ForgeFlow server. Please try again.');
+            if (btn) btn.disabled = false;
         }
     };
 
@@ -141,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
             placeholder: 'Optional reason for the buyer (e.g. transaction ID not found)...',
             required: false,
             confirmLabel: 'Reject',
-            onConfirm: async (message, overlay) => {
+            onConfirm: async (message, overlay, errorEl) => {
                 try {
                     const { ok, data } = await fetchJson(`${API_BASE}/purchase-requests/${request.id}/reject`, {
                         method: 'POST',
@@ -149,14 +170,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         body: JSON.stringify({ message })
                     });
                     if (!ok) {
-                        alert(data.message || 'Failed to reject this request.');
+                        showDialogError(errorEl, data.message || 'Could not reject this request. Please try again.');
                         return;
                     }
                     overlay.remove();
                     loadRequests();
                 } catch (err) {
                     console.error('[ForgeFlow][purchase-requests] reject failed', err);
-                    alert('Unable to reach the ForgeFlow backend. Please try again.');
+                    showDialogError(errorEl, 'Could not reach the ForgeFlow server. Please try again.');
                 }
             }
         });
@@ -168,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
             placeholder: 'Explain what needs verifying (e.g. transaction ID looks incomplete)...',
             required: true,
             confirmLabel: 'Request Verification',
-            onConfirm: async (message, overlay) => {
+            onConfirm: async (message, overlay, errorEl) => {
                 try {
                     const { ok, data } = await fetchJson(`${API_BASE}/purchase-requests/${request.id}/request-verification`, {
                         method: 'POST',
@@ -176,14 +197,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         body: JSON.stringify({ message })
                     });
                     if (!ok) {
-                        alert(data.message || 'Failed to request verification.');
+                        showDialogError(errorEl, data.message || 'Could not request verification. Please try again.');
                         return;
                     }
                     overlay.remove();
                     loadRequests();
                 } catch (err) {
                     console.error('[ForgeFlow][purchase-requests] request-verification failed', err);
-                    alert('Unable to reach the ForgeFlow backend. Please try again.');
+                    showDialogError(errorEl, 'Could not reach the ForgeFlow server. Please try again.');
                 }
             }
         });
@@ -273,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const approveBtn = card.querySelector('.req-approve-btn');
-            if (approveBtn) approveBtn.addEventListener('click', () => handleApprove(request));
+            if (approveBtn) approveBtn.addEventListener('click', () => handleApprove(request, approveBtn));
 
             const rejectBtn = card.querySelector('.req-reject-btn');
             if (rejectBtn) rejectBtn.addEventListener('click', () => handleReject(request));

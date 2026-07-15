@@ -90,6 +90,13 @@ h1, h2 {
     line-height: 1.1;
 }
 
+.topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+}
+
 .topbar-subtitle {
     font-size: 14px;
     color: var(--muted);
@@ -130,7 +137,7 @@ h1, h2 {
     border-radius: var(--radius-lg);
     background: var(--panel);
     border: 1px solid var(--line);
-    box-shadow: 0 16px 34px rgba(6, 4, 14, 0.22);
+    box-shadow: 0 16px 34px rgba(6, 4, 14, 0.28);
     transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 

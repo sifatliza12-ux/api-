@@ -143,12 +143,33 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    const renderEmptyRow = (container, icon, heading, text) => {
+        if (!container) return;
+        container.innerHTML = `
+            <div class="list-empty">
+                <span class="list-empty-icon" aria-hidden="true">${icon}</span>
+                <h3>${escapeHtml(heading)}</h3>
+                <p>${escapeHtml(text)}</p>
+            </div>
+        `;
+    };
+
+    const renderSkeleton = (container, rows = 3) => {
+        if (!container) return;
+        container.innerHTML = Array.from({ length: rows }).map(() => `
+            <div class="recent-api-row" aria-hidden="true">
+                <span class="skeleton-line skeleton-line--title"></span>
+                <span class="skeleton-line skeleton-line--desc"></span>
+            </div>
+        `).join('');
+    };
+
     const renderRecentApis = (apis) => {
         if (!recentList) return;
         const recent = apis.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 3);
 
         if (recent.length === 0) {
-            recentList.innerHTML = '<p class="recent-apis-empty">No APIs yet — record a workflow above to create your first one.</p>';
+            renderEmptyRow(recentList, '🗂️', 'No APIs yet', 'Record a workflow above to create your first one.');
             return;
         }
 
@@ -160,11 +181,8 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
     };
 
-    const renderEmptyRow = (container, text) => {
-        if (container) container.innerHTML = `<p class="recent-apis-empty">${escapeHtml(text)}</p>`;
-    };
-
     const loadDashboardData = async (authHeaders) => {
+        renderSkeleton(recentList, 3);
         try {
             const [subRes, apisRes] = await Promise.all([
                 fetch(`${API_BASE}/subscription`, { headers: authHeaders }),
@@ -223,6 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // read-only endpoint purchase-requests.js itself uses, filtered here to
     // status === 'pending' for the dashboard summary card.
     const loadPendingRequests = async (authHeaders) => {
+        renderSkeleton(pendingRequestsList, 2);
         try {
             const res = await fetch(`${API_BASE}/purchase-requests/for-me`, { headers: authHeaders });
             const all = res.ok ? await res.json().catch(() => []) : [];
@@ -232,7 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 .slice(0, 4);
 
             if (pending.length === 0) {
-                renderEmptyRow(pendingRequestsList, 'No pending purchase requests right now.');
+                renderEmptyRow(pendingRequestsList, '📥', 'No pending requests', 'New purchase requests from buyers will show up here.');
                 return;
             }
 
@@ -246,13 +265,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (err) {
             console.error('[ForgeFlow][creator-dashboard] failed to load pending requests', err);
-            renderEmptyRow(pendingRequestsList, 'Could not load purchase requests.');
+            renderEmptyRow(pendingRequestsList, '⚠️', 'Could not load requests', 'Something went wrong loading purchase requests. Try refreshing the page.');
         }
     };
 
     // Recent Sales — GET /wallet/transactions, the exact read-only endpoint
     // wallet.js itself uses (a view over purchase_requests of any status).
     const loadRecentSales = async (authHeaders) => {
+        renderSkeleton(recentSalesList, 2);
         try {
             const res = await fetch(`${API_BASE}/wallet/transactions`, { headers: authHeaders });
             const all = res.ok ? await res.json().catch(() => []) : [];
@@ -262,7 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 .slice(0, 4);
 
             if (recent.length === 0) {
-                renderEmptyRow(recentSalesList, 'No sales yet — they will show up here once buyers start purchasing.');
+                renderEmptyRow(recentSalesList, '💰', 'No sales yet', 'Sales of your paid APIs will show up here once buyers start purchasing.');
                 return;
             }
 
@@ -277,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (err) {
             console.error('[ForgeFlow][creator-dashboard] failed to load recent sales', err);
-            renderEmptyRow(recentSalesList, 'Could not load recent sales.');
+            renderEmptyRow(recentSalesList, '⚠️', 'Could not load sales', 'Something went wrong loading recent sales. Try refreshing the page.');
         }
     };
 
@@ -373,8 +393,8 @@ document.addEventListener('DOMContentLoaded', () => {
             renderBar(generationsFill, generationsValue, 0, 2);
             renderBar(runsFill, runsValue, 0, 2);
             renderRecentApis([]);
-            renderEmptyRow(pendingRequestsList, 'Log in to see purchase requests.');
-            renderEmptyRow(recentSalesList, 'Log in to see recent sales.');
+            renderEmptyRow(pendingRequestsList, '🔒', 'Log in to continue', 'Log in to see your purchase requests.');
+            renderEmptyRow(recentSalesList, '🔒', 'Log in to continue', 'Log in to see your recent sales.');
             return;
         }
 
@@ -397,11 +417,27 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
+        // Stat tiles show "…" instead of a misleading "0" while their real
+        // value is still in flight.
+        [statTotal, statPublished, statDrafts, statDownloads, statRuns, statRating, statRevenue].forEach((el) => {
+            if (el) el.textContent = '…';
+        });
+
         await loadDashboardData(authHeaders);
         await Promise.all([
             loadCreatorExtras(authHeaders),
             loadPendingRequests(authHeaders),
             loadRecentSales(authHeaders)
         ]);
+
+        // Refetch the two request/sales widgets whenever this tab regains
+        // visibility (e.g. the creator approved a request from the full
+        // Purchase Requests page in another tab and switched back).
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                loadPendingRequests(authHeaders);
+                loadRecentSales(authHeaders);
+            }
+        });
     })();
 });

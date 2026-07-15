@@ -276,7 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Free items: unchanged instant "charge and grant" — nothing about this
     // path changed by the manual-approval workflow below. Paid items now
     // open the Purchase dialog instead of buying instantly.
-    const handlePurchase = async (item, onDone) => {
+    const handlePurchase = async (item, onDone, btn) => {
         if (!isLoggedIn()) {
             requireLogin('Log in from the ForgeFlow extension popup to purchase Marketplace APIs.');
             return;
@@ -287,6 +287,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        if (btn) btn.disabled = true;
         try {
             const resp = await fetch(`${API_BASE}/marketplace/${item.id}/purchase`, {
                 method: 'POST',
@@ -296,6 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!resp.ok) {
                 alert(data.message || 'Purchase failed. Please try again.');
+                if (btn) btn.disabled = false;
                 return;
             }
 
@@ -310,7 +312,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (onDone) onDone();
         } catch (err) {
             console.error('[ForgeFlow][marketplace] purchase failed', err);
-            alert('Unable to reach the ForgeFlow backend. Please try again.');
+            alert('Could not reach the ForgeFlow server. Please try again.');
+            if (btn) btn.disabled = false;
         }
     };
 
@@ -486,7 +489,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${statusLine}${resultsHtml}`;
     };
 
-    const handleRunApi = async (item) => {
+    const handleRunApi = async (item, btn) => {
         if (!isLoggedIn()) {
             requireLogin('Log in from the ForgeFlow extension popup to run purchased APIs.');
             return;
@@ -495,6 +498,11 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('This API does not have a runnable endpoint yet.');
             return;
         }
+
+        // Disabled for the duration of the run so a rapid double-click can't
+        // open two modals / fire two concurrent runs; re-enabled once the
+        // modal is up and dismissible on its own.
+        if (btn) btn.disabled = true;
 
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
@@ -514,6 +522,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.appendChild(overlay);
         overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        if (btn) btn.disabled = false;
 
         const resultEl = overlay.querySelector('.run-result');
         resultEl.style.display = 'block';
@@ -536,7 +545,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (err) {
             resultEl.className = 'run-result run-result--error';
-            resultEl.textContent = `✗ Could not reach the backend: ${err.message}`;
+            resultEl.textContent = '✗ Could not reach the ForgeFlow server. Please try again.';
         }
     };
 
@@ -555,7 +564,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // listing (price). Kept separate from "Edit" (name/description) below
     // so each button does one obvious thing instead of one dialog trying to
     // cover every field at once.
-    const handleUpdatePrice = async (item) => {
+    const handleUpdatePrice = async (item, btn) => {
         const val = prompt('Enter new price (0 for Free):', String(typeof item.price !== 'undefined' ? item.price : '0'));
         if (val === null) return;
         const num = Number(val);
@@ -564,6 +573,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        if (btn) btn.disabled = true;
         try {
             const resp = await fetch(`${API_BASE}/marketplace/${item.id}`, {
                 method: 'PATCH',
@@ -581,17 +591,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Listing price updated.');
             } else {
                 const d = await resp.json().catch(() => ({}));
-                alert(d.message || 'Failed to update price.');
+                alert(d.message || 'Could not update the price. Please try again.');
             }
         } catch (err) {
             console.error('[ForgeFlow][marketplace] update price failed', err);
-            alert('Unable to reach the ForgeFlow backend. Please try again.');
+            alert('Could not reach the ForgeFlow server. Please try again.');
+        } finally {
+            if (btn) btn.disabled = false;
         }
     };
 
     // "Edit" — a creator changing the listing's name/description shown to
     // buyers, as opposed to its commercial terms (see handleUpdatePrice).
-    const handleEditListingDetails = async (item) => {
+    const handleEditListingDetails = async (item, btn) => {
         const newName = prompt('Listing name:', item.name || '');
         if (newName === null) return;
         if (!newName.trim()) {
@@ -602,6 +614,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const newDescription = prompt('Listing description:', item.description || '');
         if (newDescription === null) return;
 
+        if (btn) btn.disabled = true;
         try {
             const resp = await fetch(`${API_BASE}/marketplace/${item.id}`, {
                 method: 'PATCH',
@@ -619,16 +632,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Listing details updated.');
             } else {
                 const d = await resp.json().catch(() => ({}));
-                alert(d.message || 'Failed to update listing.');
+                alert(d.message || 'Could not update the listing. Please try again.');
             }
         } catch (err) {
             console.error('[ForgeFlow][marketplace] update listing details failed', err);
-            alert('Unable to reach the ForgeFlow backend. Please try again.');
+            alert('Could not reach the ForgeFlow server. Please try again.');
+        } finally {
+            if (btn) btn.disabled = false;
         }
     };
 
-    const handleRemoveListing = async (item, overlay) => {
+    const handleRemoveListing = async (item, overlay, btn) => {
         if (!confirm('Remove this listing from the marketplace? This will not delete your API.')) return;
+        if (btn) btn.disabled = true;
         try {
             const resp = await fetch(`${API_BASE}/marketplace/${item.id}`, {
                 method: 'DELETE',
@@ -640,11 +656,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (overlay) overlay.remove();
             } else {
                 const d = await resp.json().catch(() => ({}));
-                alert(d.message || 'Failed to remove listing.');
+                alert(d.message || 'Could not remove the listing. Please try again.');
+                if (btn) btn.disabled = false;
             }
         } catch (err) {
             console.error('[ForgeFlow][marketplace] remove listing failed', err);
-            alert('Unable to reach the ForgeFlow backend. Please try again.');
+            alert('Could not reach the ForgeFlow server. Please try again.');
+            if (btn) btn.disabled = false;
         }
     };
 
@@ -655,7 +673,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (buyBtn) {
             buyBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
-                handlePurchase(it);
+                handlePurchase(it, null, buyBtn);
             });
         }
 
@@ -663,7 +681,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (runBtn) {
             runBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
-                handleRunApi(it);
+                handleRunApi(it, runBtn);
             });
         }
 
@@ -681,7 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (editBtn) {
             editBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
-                handleEditListingDetails(it);
+                handleEditListingDetails(it, editBtn);
             });
         }
 
@@ -689,7 +707,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (updateBtn) {
             updateBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
-                handleUpdatePrice(it);
+                handleUpdatePrice(it, updateBtn);
             });
         }
 
@@ -932,12 +950,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const buyBtn = overlay.querySelector('.market-buy');
         if (buyBtn) {
-            buyBtn.addEventListener('click', () => handlePurchase(item, () => overlay.remove()));
+            buyBtn.addEventListener('click', () => handlePurchase(item, () => overlay.remove(), buyBtn));
         }
 
         const runBtn = overlay.querySelector('.run-api');
         if (runBtn) {
-            runBtn.addEventListener('click', () => handleRunApi(item));
+            runBtn.addEventListener('click', () => handleRunApi(item, runBtn));
         }
 
         const verifyBtn = overlay.querySelector('.market-verify');
@@ -951,12 +969,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const editBtn = overlay.querySelector('.edit-listing');
         if (editBtn) {
-            editBtn.addEventListener('click', () => handleEditListingDetails(item));
+            editBtn.addEventListener('click', () => handleEditListingDetails(item, editBtn));
         }
 
         const updateBtn = overlay.querySelector('.update-listing');
         if (updateBtn) {
-            updateBtn.addEventListener('click', () => handleUpdatePrice(item));
+            updateBtn.addEventListener('click', () => handleUpdatePrice(item, updateBtn));
         }
 
         const analyticsBtn = overlay.querySelector('.view-analytics');
@@ -966,7 +984,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const removeBtn = overlay.querySelector('.remove-listing');
         if (removeBtn) {
-            removeBtn.addEventListener('click', () => handleRemoveListing(item, overlay));
+            removeBtn.addEventListener('click', () => handleRemoveListing(item, overlay, removeBtn));
         }
     };
 

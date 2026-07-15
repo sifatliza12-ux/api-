@@ -104,8 +104,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let authHeaders = {};
 
-    const renderEmptyRow = (container, text) => {
-        if (container) container.innerHTML = `<p class="recent-apis-empty">${escapeHtml(text)}</p>`;
+    const renderEmptyRow = (container, icon, heading, text) => {
+        if (!container) return;
+        container.innerHTML = `
+            <div class="list-empty">
+                <span class="list-empty-icon" aria-hidden="true">${icon}</span>
+                <h3>${escapeHtml(heading)}</h3>
+                <p>${escapeHtml(text)}</p>
+            </div>
+        `;
+    };
+
+    const renderSkeleton = (container, rows = 3) => {
+        if (!container) return;
+        container.innerHTML = Array.from({ length: rows }).map(() => `
+            <div class="recent-api-row" aria-hidden="true">
+                <span class="skeleton-line skeleton-line--title"></span>
+                <span class="skeleton-line skeleton-line--desc"></span>
+            </div>
+        `).join('');
     };
 
     const buildBuyerRowHtml = (it, { showRun } = {}) => `
@@ -113,6 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="recent-api-row-name">${escapeHtml(it.name)}</span>
             <span class="recent-api-row-meta">${escapeHtml(it.publisher || 'Unknown creator')}${it.purchasedAt ? ` • ${formatRelativeDate(it.purchasedAt)}` : ''}</span>
             ${showRun ? `<button type="button" class="btn btn-secondary btn-sm buyer-row-run-btn" data-endpoint="${escapeHtml(it.endpoint || '')}" data-method="${escapeHtml(it.method || 'POST')}">Run</button>` : ''}
+            ${showRun ? '<span class="row-run-result" hidden></span>' : ''}
         </div>
     `;
 
@@ -129,27 +147,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({})
             });
             const data = await response.json().catch(() => ({}));
-            const message = response.ok && data.success ? (data.message || 'Run succeeded.') : (data.message || 'Run failed.');
+            const message = response.ok && data.success ? (data.message || 'Run succeeded.') : (data.message || 'Run failed. Please try again.');
             if (resultEl) {
                 resultEl.textContent = message;
+                resultEl.classList.toggle('row-run-result--error', !(response.ok && data.success));
             } else {
                 alert(message);
             }
         } catch (err) {
-            const message = `Could not reach the backend: ${err.message}`;
+            const message = 'Could not reach the ForgeFlow server. Please try again.';
             if (resultEl) {
                 resultEl.textContent = message;
+                resultEl.classList.add('row-run-result--error');
             } else {
                 alert(message);
             }
         }
     };
 
+    // Row-level Run buttons show their result inline, right under the row
+    // (same disabled/"Running…" loading state they already had) instead of
+    // a bare alert() — matching Quick Run's inline behavior below.
     const handleBuyerRowRun = async (btn) => {
         const original = btn.textContent;
         btn.disabled = true;
         btn.textContent = 'Running…';
-        await runEndpoint(btn.dataset.endpoint, btn.dataset.method, null);
+        const resultEl = btn.parentElement?.querySelector('.row-run-result') || null;
+        await runEndpoint(btn.dataset.endpoint, btn.dataset.method, resultEl);
         btn.disabled = false;
         btn.textContent = original;
     };
@@ -201,6 +225,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let buyerDataLoaded = false;
     const loadBuyerData = async () => {
         if (buyerDataLoaded) return;
+        renderSkeleton(buyerPurchasedList, 3);
+        renderSkeleton(buyerRecentUsedList, 3);
+        renderSkeleton(buyerRecommendedList, 3);
+        if (historyTotal) historyTotal.textContent = '…';
+        if (historyRecent) historyRecent.textContent = '…';
         try {
             const [purchasesRes, marketRes] = await Promise.all([
                 fetch(`${API_BASE}/marketplace/purchases/mine`, { headers: authHeaders }),
@@ -216,7 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Purchased APIs card — alphabetical, a browsable library view.
             const byName = purchaseList.slice().sort((a, b) => a.name.localeCompare(b.name)).slice(0, 4);
             if (byName.length === 0) {
-                renderEmptyRow(buyerPurchasedList, 'No purchases yet — browse the Marketplace to get started.');
+                renderEmptyRow(buyerPurchasedList, '🛒', 'No purchases yet', 'Browse the Marketplace to get started.');
             } else if (buyerPurchasedList) {
                 buyerPurchasedList.innerHTML = byName.map((it) => buildBuyerRowHtml(it, { showRun: true })).join('');
                 wireBuyerRowRunButtons(buyerPurchasedList);
@@ -226,7 +255,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // available proxy for "used" until per-run history is tracked).
             const byRecency = purchaseList.slice().sort((a, b) => new Date(b.purchasedAt) - new Date(a.purchasedAt)).slice(0, 4);
             if (byRecency.length === 0) {
-                renderEmptyRow(buyerRecentUsedList, 'Nothing run yet — run a purchased API to see it here.');
+                renderEmptyRow(buyerRecentUsedList, '▶', 'Nothing run yet', 'Run a purchased API to see it here.');
             } else if (buyerRecentUsedList) {
                 buyerRecentUsedList.innerHTML = byRecency.map((it) => buildBuyerRowHtml(it, { showRun: true })).join('');
                 wireBuyerRowRunButtons(buyerRecentUsedList);
@@ -248,7 +277,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 .slice(0, 4);
 
             if (recommended.length === 0) {
-                renderEmptyRow(buyerRecommendedList, 'You already own everything trending right now!');
+                renderEmptyRow(buyerRecommendedList, '⭐', 'All caught up', 'You already own everything trending right now!');
             } else if (buyerRecommendedList) {
                 buyerRecommendedList.innerHTML = recommended.map((it) => `
                     <div class="recent-api-row">
@@ -271,9 +300,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 authNote.hidden = false;
                 authNote.textContent = 'Log in from the ForgeFlow extension popup to see your purchases.';
             }
-            renderEmptyRow(buyerPurchasedList, 'Log in to see your purchases.');
-            renderEmptyRow(buyerRecentUsedList, 'Log in to see recently used APIs.');
-            renderEmptyRow(buyerRecommendedList, 'Log in to see recommendations.');
+            renderEmptyRow(buyerPurchasedList, '🔒', 'Log in to continue', 'Log in to see your purchases.');
+            renderEmptyRow(buyerRecentUsedList, '🔒', 'Log in to continue', 'Log in to see recently used APIs.');
+            renderEmptyRow(buyerRecommendedList, '🔒', 'Log in to continue', 'Log in to see recommendations.');
             return;
         }
 
@@ -297,5 +326,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         await loadBuyerData();
+
+        // Refetch whenever this tab regains visibility (e.g. a purchase was
+        // approved or a new API run happened in another tab).
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                buyerDataLoaded = false;
+                loadBuyerData();
+            }
+        });
     })();
 });

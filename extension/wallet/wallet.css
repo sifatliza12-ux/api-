@@ -30,6 +30,9 @@
 .transaction-buyer {
     font-weight: 600;
     color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .transaction-api {
@@ -49,7 +52,7 @@
     font-size: 12px;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 640px) {
     .transaction-row-header {
         display: none;
     }

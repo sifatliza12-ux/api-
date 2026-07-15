@@ -109,7 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         transactionsTable.innerHTML = transactions.map((t) => `
             <div class="transaction-row">
-                <span class="transaction-buyer">${escapeHtml(t.buyerName)}</span>
+                <span class="transaction-buyer" title="${escapeHtml(t.buyerName)}">${escapeHtml(t.buyerName)}</span>
                 <span class="transaction-api" title="${escapeHtml(t.listingName)}">${escapeHtml(t.listingName)}</span>
                 <span class="transaction-amount">$${Number(t.amount).toFixed(2)}</span>
                 <span class="badge badge-status-${t.status}">${STATUS_LABELS[t.status] || t.status}</span>
@@ -154,5 +154,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         authHeaders = { Authorization: `Bearer ${session.token}` };
         loadWallet();
+
+        // Refetch whenever this tab regains focus/visibility (e.g. the user
+        // approved a purchase request in another tab and switched back) so
+        // the numbers here don't go stale until a manual refresh click.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') loadWallet();
+        });
     })();
 });

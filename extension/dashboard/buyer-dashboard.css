@@ -73,7 +73,7 @@ h1, h2, h3 {
     font-size: 19px;
     font-weight: 700;
     letter-spacing: 0.08em;
-    box-shadow: 0 12px 28px rgba(236, 72, 153, 0.3);
+    box-shadow: 0 12px 28px rgba(236, 72, 153, 0.28);
 }
 
 .eyebrow {
@@ -86,14 +86,14 @@ h1, h2, h3 {
 }
 
 .brand-copy h1 {
-    font-size: 28px;
+    font-size: 30px;
     line-height: 1.1;
 }
 
 .topbar-actions {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 18px;
     flex-wrap: wrap;
 }
 
@@ -148,7 +148,7 @@ h1, h2, h3 {
     color: #fff;
     border: none;
     background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 55%, var(--accent-3) 100%);
-    box-shadow: 0 10px 24px rgba(236, 72, 153, 0.28);
+    box-shadow: 0 10px 24px rgba(236, 72, 153, 0.24);
 }
 
 .btn-secondary {
@@ -194,7 +194,7 @@ h1, h2, h3 {
     padding: 10px 16px;
     cursor: pointer;
     text-decoration: none;
-    box-shadow: 0 10px 22px rgba(236, 72, 153, 0.28);
+    box-shadow: 0 10px 24px rgba(236, 72, 153, 0.24);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
     white-space: nowrap;
 }
@@ -413,8 +413,74 @@ h1, h2, h3 {
     border: 1px dashed var(--line);
 }
 
+/* Polished empty state — same icon+heading+paragraph spec as the app-wide
+   `.marketplace-empty` pattern, ported locally rather than importing
+   marketplace.css wholesale, sized for a card-sized list slot. */
+.list-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 6px;
+    padding: 32px 20px;
+    border-radius: var(--radius-md);
+    border: 1px dashed var(--line);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.list-empty-icon {
+    font-size: 28px;
+    opacity: 0.75;
+}
+
+.list-empty h3 {
+    font-size: 14px;
+}
+
+.list-empty p {
+    font-size: 12px;
+    color: var(--muted);
+    max-width: 260px;
+    line-height: 1.5;
+}
+
+/* Loading skeletons — same shimmer visual language as marketplace.css/
+   my-apis.css, ported locally so these lists never sit blank while their
+   fetch is in flight. */
+.skeleton-line {
+    height: 14px;
+    border-radius: 7px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.06) 25%, rgba(255, 255, 255, 0.16) 37%, rgba(255, 255, 255, 0.06) 63%);
+    background-size: 400% 100%;
+    animation: shimmer 1.4s ease infinite;
+}
+
+.skeleton-line--title {
+    width: 55%;
+    height: 18px;
+}
+
+.skeleton-line--desc {
+    width: 80%;
+}
+
+@keyframes shimmer {
+    0% { background-position: 100% 50%; }
+    100% { background-position: 0 50%; }
+}
+
 .buyer-row-run-btn {
     flex-shrink: 0;
+}
+
+.row-run-result {
+    flex-basis: 100%;
+    font-size: 11.5px;
+    color: var(--muted);
+}
+
+.row-run-result--error {
+    color: var(--danger);
 }
 
 .buyer-content-grid {
@@ -473,6 +539,21 @@ h1, h2, h3 {
     margin-top: 8px;
 }
 
+/* Subtle entrance for the main widget sections, matching the rise-fade/
+   rise-in pattern already used on Mode Select and Analytics' mode-content
+   swap, so dashboard content doesn't just hard-appear on load. */
+.quick-actions,
+.model-grid,
+.buyer-content-grid,
+.marketplace-section {
+    animation: rise-fade 0.35s ease both;
+}
+
+@keyframes rise-fade {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 @media (max-width: 640px) {
     .page-shell {
         padding: 24px 16px 48px;
@@ -485,5 +566,9 @@ h1, h2, h3 {
 
     .topbar-actions {
         width: 100%;
+    }
+
+    .model-grid {
+        grid-template-columns: 1fr;
     }
 }

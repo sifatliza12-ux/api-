@@ -368,6 +368,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const handleLogout = async () => {
+        if (logoutBtn) logoutBtn.disabled = true;
         const session = await getAuthSession();
         if (session?.token) {
             try {

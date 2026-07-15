@@ -96,10 +96,18 @@
             dropdown = document.createElement('div');
             dropdown.className = 'notif-dropdown';
 
+            const hasUnread = notifications.some((n) => !n.read);
+            const headerHtml = `
+                <div class="notif-dropdown-header">
+                    <span class="notif-dropdown-title">Notifications</span>
+                    <button type="button" class="notif-mark-all-btn" id="notif-mark-all-btn"${hasUnread ? '' : ' disabled'}>Mark all read</button>
+                </div>
+            `;
+
             if (!notifications.length) {
-                dropdown.innerHTML = '<div class="notif-dropdown-empty">No notifications yet.</div>';
+                dropdown.innerHTML = headerHtml + '<div class="notif-dropdown-empty">No notifications yet.</div>';
             } else {
-                dropdown.innerHTML = notifications.map((n) => `
+                dropdown.innerHTML = headerHtml + notifications.map((n) => `
                     <button type="button" class="notif-item${n.read ? '' : ' unread'}" data-id="${n.id}" data-link="${escapeHtml(n.link || '')}">
                         <div class="notif-item-title">${escapeHtml(n.title)}</div>
                         ${n.body ? `<div class="notif-item-body">${escapeHtml(n.body)}</div>` : ''}
@@ -110,6 +118,21 @@
 
             wrap.appendChild(dropdown);
             bellBtn.setAttribute('aria-expanded', 'true');
+
+            const markAllBtn = dropdown.querySelector('#notif-mark-all-btn');
+            if (markAllBtn) {
+                markAllBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    markAllBtn.disabled = true;
+                    try {
+                        await fetchJson(`${apiBase}/notifications/read-all`, { method: 'POST', headers: authHeaders });
+                    } catch (err) {
+                        console.error('[ForgeFlow][notifications] mark-all-read failed', err);
+                    }
+                    closeDropdown();
+                    refresh();
+                });
+            }
 
             dropdown.querySelectorAll('.notif-item').forEach((item) => {
                 item.addEventListener('click', async () => {
@@ -129,12 +152,25 @@
             setTimeout(() => document.addEventListener('click', onDocumentClick, true), 0);
         };
 
+        // Dedupe by id defensively — refresh() already replaces (rather than
+        // appends) the stored list wholesale, so this is a cheap safety net
+        // against ever rendering the same notification twice, not a fix for
+        // an observed accumulation bug.
+        const dedupeById = (notifications) => {
+            const seen = new Set();
+            return notifications.filter((n) => {
+                if (seen.has(n.id)) return false;
+                seen.add(n.id);
+                return true;
+            });
+        };
+
         const refresh = async () => {
             try {
                 const { ok, data } = await fetchJson(`${apiBase}/notifications/mine`, { headers: authHeaders });
                 if (!ok) return;
                 setUnreadCount(data.unreadCount || 0);
-                bellBtn.dataset.notifications = JSON.stringify(data.notifications || []);
+                bellBtn.dataset.notifications = JSON.stringify(dedupeById(data.notifications || []));
             } catch (err) {
                 console.error('[ForgeFlow][notifications] refresh failed', err);
             }

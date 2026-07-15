@@ -225,7 +225,7 @@ h1, h2 {
 .btn-primary {
     color: #fff;
     background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 55%, var(--accent-3) 100%);
-    box-shadow: 0 12px 26px rgba(236, 72, 153, 0.26);
+    box-shadow: 0 10px 24px rgba(236, 72, 153, 0.24);
 }
 
 .onboarding-footnote {

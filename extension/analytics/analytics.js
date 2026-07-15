@@ -431,6 +431,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (refreshBtn) refreshBtn.addEventListener('click', refresh);
 
+    // Refetch whenever this tab regains focus/visibility, so numbers here
+    // don't go stale if the user made a change (published an API, had a
+    // purchase approved) in another tab and switched back.
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') refresh();
+    });
+
     (async () => {
         const session = await getAuthSession();
         if (!session?.token) {

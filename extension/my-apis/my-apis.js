@@ -290,7 +290,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } catch (err) {
                 resultEl.classList.add('run-result--error');
-                resultEl.textContent = `✗ Could not reach the backend: ${err.message}`;
+                resultEl.textContent = '✗ Could not reach the ForgeFlow server. Please try again.';
             } finally {
                 resultEl.style.display = 'block';
                 runBtn.disabled = false;
@@ -413,20 +413,28 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        card.querySelector('.delete-api-btn').addEventListener('click', async () => {
+        const deleteBtn = card.querySelector('.delete-api-btn');
+        deleteBtn.addEventListener('click', async () => {
             if (!confirm('Delete this API? This action cannot be undone.')) return;
+            deleteBtn.disabled = true;
+            const originalLabel = deleteBtn.textContent;
+            deleteBtn.textContent = 'Deleting…';
             try {
                 const resp = await fetch(`${API_BASE}/api/my-apis/${api.id}`, { method: 'DELETE', headers: authHeaders });
                 if (!resp.ok) {
                     const d = await resp.json().catch(() => ({}));
                     console.warn('[ForgeFlow][my-apis] delete failed', d);
-                    alert(d.message || 'Unable to delete API.');
+                    alert(d.message || 'Could not delete this API. Please try again.');
+                    deleteBtn.disabled = false;
+                    deleteBtn.textContent = originalLabel;
                     return;
                 }
                 loadApis();
             } catch (err) {
                 console.error('[ForgeFlow][my-apis] delete failed', err);
-                alert('Unable to delete API.');
+                alert('Could not reach the ForgeFlow server. Please try again.');
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = originalLabel;
             }
         });
     };
