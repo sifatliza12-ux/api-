@@ -904,18 +904,29 @@ const createPageTracker = (initialPage) => {
   };
 };
 
-// Visible by default: the whole point of "Run API" from the user's
-// perspective is watching the recorded workflow actually happen in a real
-// browser window, not trusting a backend log that says it happened. Opt
-// into headless (e.g. for an unattended server/CI deployment with no
-// display) via FORGEFLOW_HEADLESS=true — this is a deployment-mode switch,
-// not a per-site setting, so it stays generic.
-const HEADLESS = process.env.FORGEFLOW_HEADLESS === 'true';
+// Visible by default in local development: the whole point of "Run API"
+// from the user's perspective is watching the recorded workflow actually
+// happen in a real browser window, not trusting a backend log that says it
+// happened. Production (NODE_ENV=production) has no display to show that
+// window on — Railway and every other server/container host — so it
+// defaults to headless there instead. FORGEFLOW_HEADLESS always wins when
+// explicitly set (either direction, in any environment), so this remains a
+// deployment-mode switch, not a per-site setting.
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const HEADLESS = process.env.FORGEFLOW_HEADLESS !== undefined
+  ? process.env.FORGEFLOW_HEADLESS === 'true'
+  : NODE_ENV === 'production';
+
+// Chromium's sandbox needs kernel privileges that containerized hosts like
+// Railway don't grant, and /dev/shm is typically too small there too — the
+// standard launch args for running headless Chromium in a container.
+// Headed mode is local-only (see above), where none of this applies.
+const CONTAINER_LAUNCH_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'];
 
 const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint }) => {
   const runStartedAt = Date.now();
   const values = parameterValues || {};
-  const browser = await chromium.launch({ headless: HEADLESS, args: HEADLESS ? [] : ['--start-maximized'] });
+  const browser = await chromium.launch({ headless: HEADLESS, args: HEADLESS ? CONTAINER_LAUNCH_ARGS : ['--start-maximized'] });
   // null viewport lets the page fill the actual (maximized) window instead
   // of being letterboxed to Playwright's fixed default size — only
   // meaningful in headed mode; headless has no real window to fill.

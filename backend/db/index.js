@@ -7,7 +7,16 @@ const Database = require('better-sqlite3');
 // every service function that used to run in-memory (no await) keeps that
 // exact same synchronous call signature after this migration; only the
 // bcrypt-dependent User functions are async, same as before.
-const DATA_DIR = path.join(__dirname, '..', 'data');
+//
+// DATABASE_DIR is optional and only matters in production: a platform like
+// Railway wipes the local filesystem on every deploy/restart unless the
+// database lives on a mounted persistent Volume, so DATABASE_DIR should be
+// set to that Volume's mount path there. Left unset, this falls back to the
+// same relative backend/data path it has always used — local development is
+// unaffected.
+const DATA_DIR = process.env.DATABASE_DIR
+  ? path.resolve(process.env.DATABASE_DIR)
+  : path.join(__dirname, '..', 'data');
 const DB_PATH = path.join(DATA_DIR, 'forgeflow.db');
 
 if (!fs.existsSync(DATA_DIR)) {
