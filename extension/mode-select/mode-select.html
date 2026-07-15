@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ForgeFlow — Choose Your Mode</title>
+    <script src="../shared/theme.js"></script>
+    <link rel="stylesheet" href="mode-select.css">
+    <link rel="stylesheet" href="../shared/theme.css">
+</head>
+<body>
+    <main class="onboarding-shell">
+        <div class="ambient ambient-one" aria-hidden="true"></div>
+        <div class="ambient ambient-two" aria-hidden="true"></div>
+
+        <p class="usage-note" id="auth-note" hidden></p>
+
+        <section class="onboarding-intro">
+            <div class="brand-mark" aria-hidden="true">FF</div>
+            <h1>Welcome back to ForgeFlow</h1>
+            <p class="onboarding-subtitle">How would you like to use ForgeFlow today?</p>
+        </section>
+
+        <div class="role-card-grid">
+            <article class="role-card" data-role="creator">
+                <span class="last-used-badge" data-last-used-badge hidden>Last used</span>
+                <span class="role-card-icon" aria-hidden="true">🚀</span>
+                <h2>Creator</h2>
+                <ul class="role-card-list">
+                    <li>Record workflows</li>
+                    <li>Publish APIs</li>
+                    <li>Manage sales</li>
+                    <li>Track analytics</li>
+                </ul>
+                <button type="button" class="btn btn-primary role-card-btn" data-role-choice="creator">Enter Creator Mode</button>
+            </article>
+
+            <article class="role-card" data-role="buyer">
+                <span class="last-used-badge" data-last-used-badge hidden>Last used</span>
+                <span class="role-card-icon" aria-hidden="true">🛒</span>
+                <h2>Buyer</h2>
+                <ul class="role-card-list">
+                    <li>Browse Marketplace</li>
+                    <li>Purchase APIs</li>
+                    <li>Run purchased APIs</li>
+                    <li>Manage purchases</li>
+                </ul>
+                <button type="button" class="btn btn-primary role-card-btn" data-role-choice="buyer">Enter Buyer Mode</button>
+            </article>
+        </div>
+
+        <p class="onboarding-footnote">You can switch between Creator and Buyer any time from the dashboard's navigation bar.</p>
+    </main>
+
+    <script src="../shared/roles.js"></script>
+    <script src="mode-select.js"></script>
+</body>
+</html>

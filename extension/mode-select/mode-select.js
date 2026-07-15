@@ -1,11 +1,11 @@
 /**
- * onboarding.js
- * First-time role choice. dashboard.js redirects here whenever a logged-in
- * user has no role saved yet (shared/roles.js hasChosenRole); picking a card
- * here just calls ForgeFlowRoles.setRole and sends the user back to the
- * Dashboard, which will now render in that mode. No API/workflow/purchase
- * data is read or written here — this only ever touches the role
- * preference.
+ * mode-select.js
+ * The gateway screen between login and the two dashboards. Shown every time
+ * the Dashboard entry point is reached (see popup.js's openDashboardTab),
+ * not just on first login — a previously-chosen mode is indicated with a
+ * "Last used" badge, but picking a card (even the same one again) is always
+ * a deliberate click. Only ever reads/writes the role preference via
+ * shared/roles.js; no API/workflow/purchase data is touched here.
  */
 
 const AUTH_STORAGE_KEY = 'forgeflow.auth';
@@ -20,9 +20,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const authNote = document.getElementById('auth-note');
     const roleButtons = document.querySelectorAll('[data-role-choice]');
 
-    const goToDashboard = () => {
+    const DASHBOARD_PATH_BY_ROLE = {
+        creator: 'dashboard/creator-dashboard.html',
+        buyer: 'dashboard/buyer-dashboard.html'
+    };
+
+    const goToDashboard = (role) => {
         if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
-            window.location.href = chrome.runtime.getURL('dashboard/dashboard.html');
+            window.location.href = chrome.runtime.getURL(DASHBOARD_PATH_BY_ROLE[role] || DASHBOARD_PATH_BY_ROLE.creator);
         }
     };
 
@@ -30,7 +35,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window.ForgeFlowRoles) {
             await window.ForgeFlowRoles.setRole(userId, role);
         }
-        goToDashboard();
+        goToDashboard(role);
+    };
+
+    const markLastUsed = (role) => {
+        if (!role) return;
+        const card = document.querySelector(`.role-card[data-role="${role}"]`);
+        if (!card) return;
+        card.classList.add('role-card--last-used');
+        const badge = card.querySelector('[data-last-used-badge]');
+        if (badge) badge.hidden = false;
     };
 
     (async () => {
@@ -47,5 +61,10 @@ document.addEventListener('DOMContentLoaded', () => {
         roleButtons.forEach((btn) => {
             btn.addEventListener('click', () => chooseRole(btn.dataset.roleChoice, session.user.id));
         });
+
+        if (window.ForgeFlowRoles) {
+            const currentRole = await window.ForgeFlowRoles.getRole(session.user.id);
+            markLastUsed(currentRole);
+        }
     })();
 });

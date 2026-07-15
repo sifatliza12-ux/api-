@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ForgeFlow — Buyer Hub</title>
+    <script src="../shared/theme.js"></script>
+    <link rel="stylesheet" href="buyer-dashboard.css">
+    <link rel="stylesheet" href="../shared/nav.css">
+    <link rel="stylesheet" href="../shared/theme.css">
+</head>
+<body>
+    <div class="page-shell page-shell--buyer">
+        <header class="topbar">
+            <div class="brand-group">
+                <div class="brand-mark" aria-hidden="true">FF</div>
+                <div class="brand-copy">
+                    <p class="eyebrow">ForgeFlow · Buyer Hub</p>
+                    <h1>🛒 Buyer Dashboard</h1>
+                </div>
+            </div>
+            <div class="topbar-actions">
+                <p class="topbar-subtitle">Browse, purchase, and run Marketplace APIs.</p>
+                <a class="mode-switch-link" id="mode-switch-link" href="#">🚀 Switch to Creator Mode →</a>
+            </div>
+        </header>
+
+        <nav class="app-nav" id="app-nav" data-nav-mode="buyer" aria-label="Primary navigation"></nav>
+
+        <main class="page-content">
+            <p class="usage-note" id="auth-note" hidden></p>
+
+            <section class="quick-actions" aria-label="Buyer quick actions">
+                <a class="quick-action-btn" id="qa-browse-marketplace" href="#">
+                    <span class="quick-action-icon" aria-hidden="true">◫</span>
+                    <span>Browse Marketplace</span>
+                </a>
+                <a class="quick-action-btn" id="qa-run-purchased" href="#">
+                    <span class="quick-action-icon" aria-hidden="true">▶</span>
+                    <span>Run Purchased API</span>
+                </a>
+                <a class="quick-action-btn" id="qa-purchase-history" href="#">
+                    <span class="quick-action-icon" aria-hidden="true">🧾</span>
+                    <span>Purchase History</span>
+                </a>
+            </section>
+
+            <section class="model-grid" aria-label="Marketplace">
+                <article class="model-card model-card--marketplace">
+                    <div class="model-card-top">
+                        <h2>Marketplace</h2>
+                        <span class="badge badge-free">Always available</span>
+                    </div>
+                    <p class="model-card-copy">Browsing, viewing details, and purchasing Marketplace APIs are never limited by your plan — every user can buy and run purchased APIs.</p>
+                    <ul class="model-feature-list">
+                        <li>Browse the Marketplace</li>
+                        <li>View API details</li>
+                        <li>Purchase Marketplace APIs</li>
+                        <li>Run purchased APIs any time</li>
+                    </ul>
+                    <a class="btn btn-primary model-card-link" href="#" id="marketplace-link">Browse Marketplace</a>
+                </article>
+
+                <article class="model-card quick-run-card" id="quick-run-widget">
+                    <div class="model-card-top">
+                        <h2>Quick Run</h2>
+                        <span class="badge badge-free">Instant</span>
+                    </div>
+                    <p class="model-card-copy">Run one of your purchased APIs right from the dashboard, with its recorded default values.</p>
+                    <div class="quick-run-controls">
+                        <select id="quick-run-select" class="quick-run-select">
+                            <option value="">Select a purchased API…</option>
+                        </select>
+                        <button type="button" class="btn btn-primary" id="quick-run-btn" disabled>Run</button>
+                    </div>
+                    <p class="quick-run-result" id="quick-run-result" hidden></p>
+                </article>
+            </section>
+
+            <section class="buyer-content-grid" aria-label="Purchased, recently used, and history">
+                <article class="buyer-card">
+                    <div class="section-heading">
+                        <h2>Recently Purchased APIs</h2>
+                        <a href="#" id="view-purchased-link" class="result-count">View all →</a>
+                    </div>
+                    <div id="buyer-purchased-list" class="recent-apis-list"></div>
+                </article>
+
+                <article class="buyer-card">
+                    <div class="section-heading">
+                        <h2>Recently Used APIs</h2>
+                    </div>
+                    <div id="buyer-recent-used-list" class="recent-apis-list"></div>
+                </article>
+
+                <article class="buyer-card">
+                    <div class="section-heading">
+                        <h2>Purchase History</h2>
+                        <a href="#" id="view-history-link" class="result-count">View full history →</a>
+                    </div>
+                    <div class="purchase-history-summary" id="purchase-history-summary">
+                        <div class="purchase-history-stat">
+                            <span class="stat-label">Total Purchases</span>
+                            <strong id="history-total">0</strong>
+                        </div>
+                        <div class="purchase-history-stat">
+                            <span class="stat-label">Most Recent</span>
+                            <strong id="history-recent">—</strong>
+                        </div>
+                    </div>
+                </article>
+            </section>
+
+            <section class="marketplace-section" aria-label="Recommended APIs">
+                <div class="section-heading">
+                    <h2>Recommended APIs</h2>
+                    <a href="#" id="view-marketplace-link" class="result-count">Browse →</a>
+                </div>
+                <div id="buyer-recommended-list" class="recent-apis-list"></div>
+            </section>
+
+            <p class="footer-note">Buyer Hub — jump to My APIs, Analytics, and more any time by switching to Creator Mode above.</p>
+        </main>
+    </div>
+
+    <script src="../shared/config.js"></script>
+    <script src="../shared/roles.js"></script>
+    <script src="../shared/nav.js"></script>
+    <script src="../shared/preferences.js"></script>
+    <script src="../shared/notifications.js"></script>
+    <script src="buyer-dashboard.js"></script>
+</body>
+</html>

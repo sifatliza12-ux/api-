@@ -11,7 +11,7 @@
     const LAST_PAGE_KEY = 'forgeflow.lastVisitedPage';
 
     const DEFAULT_PREFS = {
-        defaultLandingPage: 'dashboard/dashboard.html',
+        defaultLandingPage: 'mode-select/mode-select.html',
         autoOpenReplayBrowser: true,
         rememberLastPage: true
     };

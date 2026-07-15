@@ -1,86 +1,109 @@
 /**
- * Shared persistent navigation bar. Every ForgeFlow tab page includes this
- * script plus an empty `<nav id="app-nav">` — this fills it in with links
- * to every top-level destination and highlights whichever one matches the
- * current page, so users can always get from any page to any other page
- * without ever getting stuck.
+ * Shared persistent navigation bar. Every ForgeFlow full-page tab includes
+ * this script plus an empty `<nav id="app-nav">` — this fills it in with
+ * links to that mode's destinations and highlights whichever one matches
+ * the current page, so users can always get from any page back to their
+ * dashboard or any other page in their workspace without getting stuck.
  *
  * Navigation is done with plain `<a href>` tags pointing at
  * chrome-extension:// URLs, so clicking a link navigates the current tab
  * (not a new one) — one connected app, not a pile of separate tabs.
  *
- * Role-aware: every item always renders (Creator/Buyer mode never removes a
- * page, per product requirement) — only the *order* changes, prioritizing
- * whichever pages matter most for the current role. Falls back to the
- * original fixed order when there's no session or no role chosen yet.
+ * Mode-aware by *filtering*, not just reordering: Creator and Buyer each see
+ * only their own destinations (per product requirement — Creator/Buyer
+ * should feel like two different applications sharing one account), plus
+ * Settings in both. "Notifications" isn't a nav link on purpose — the bell
+ * (shared/notifications.js) is already injected into every page's topbar
+ * and covers that requirement without a dedicated page.
+ *
+ * The two dashboard pages (dashboard/creator-dashboard.html,
+ * dashboard/buyer-dashboard.html) know their own mode outright and declare
+ * it via `data-nav-mode` on `<nav id="app-nav">`, so they render instantly
+ * with no async wait. Every other page doesn't know the mode up front, so
+ * it falls back to the full union list for the first paint, then re-renders
+ * once shared/roles.js resolves the user's saved mode (and again live, on
+ * any cross-tab mode switch).
  */
 (function () {
-    const NAV_ITEMS = [
-        { key: 'dashboard', label: 'Dashboard', icon: '🏠', path: 'dashboard/dashboard.html' },
-        { key: 'record', label: 'Record Workflow', icon: '⏺', path: 'dashboard/dashboard.html#record-banner' },
+    const CREATOR_NAV_ITEMS = [
+        { key: 'dashboard', label: 'Dashboard', icon: '🏠', path: 'dashboard/creator-dashboard.html' },
+        { key: 'record', label: 'Record Workflow', icon: '⏺', path: 'dashboard/creator-dashboard.html#record-banner' },
+        { key: 'my-apis', label: 'My APIs', icon: '✦', path: 'my-apis/my-apis.html' },
+        { key: 'published-apis', label: 'Published APIs', icon: '📦', path: 'my-apis/my-apis.html?filter=published' },
+        { key: 'analytics', label: 'Analytics', icon: '📊', path: 'analytics/analytics.html' },
+        { key: 'wallet', label: 'Wallet', icon: '💰', path: 'wallet/wallet.html' },
+        { key: 'purchase-requests', label: 'Purchase Requests', icon: '📥', path: 'purchase-requests/purchase-requests.html' },
+        { key: 'settings', label: 'Settings', icon: '⚙', path: 'settings/settings.html' }
+    ];
+
+    const BUYER_NAV_ITEMS = [
+        { key: 'dashboard', label: 'Dashboard', icon: '🏠', path: 'dashboard/buyer-dashboard.html' },
         { key: 'marketplace', label: 'Marketplace', icon: '◫', path: 'marketplace/marketplace.html' },
         { key: 'purchased-apis', label: 'Purchased APIs', icon: '🛒', path: 'purchased-apis/purchased-apis.html' },
-        { key: 'my-purchases', label: 'My Purchases', icon: '🧾', path: 'my-purchases/my-purchases.html' },
+        { key: 'run-api', label: 'Run API', icon: '▶', path: 'dashboard/buyer-dashboard.html#quick-run-widget' },
+        { key: 'purchase-history', label: 'Purchase History', icon: '🧾', path: 'my-purchases/my-purchases.html' },
+        { key: 'settings', label: 'Settings', icon: '⚙', path: 'settings/settings.html' }
+    ];
+
+    // Pre-role-known fallback only (first paint on pages that don't declare
+    // data-nav-mode, before the async role lookup below resolves) — points
+    // "Dashboard" at the universal Mode Selection gateway since which
+    // per-mode dashboard to link to isn't known yet.
+    const ALL_ITEMS = [
+        { key: 'dashboard', label: 'Dashboard', icon: '🏠', path: 'mode-select/mode-select.html' },
+        { key: 'marketplace', label: 'Marketplace', icon: '◫', path: 'marketplace/marketplace.html' },
+        { key: 'purchased-apis', label: 'Purchased APIs', icon: '🛒', path: 'purchased-apis/purchased-apis.html' },
+        { key: 'purchase-history', label: 'Purchase History', icon: '🧾', path: 'my-purchases/my-purchases.html' },
         { key: 'my-apis', label: 'My APIs', icon: '✦', path: 'my-apis/my-apis.html' },
         { key: 'published-apis', label: 'Published APIs', icon: '📦', path: 'my-apis/my-apis.html?filter=published' },
         { key: 'purchase-requests', label: 'Purchase Requests', icon: '📥', path: 'purchase-requests/purchase-requests.html' },
         { key: 'wallet', label: 'Wallet', icon: '💰', path: 'wallet/wallet.html' },
         { key: 'analytics', label: 'Analytics', icon: '📊', path: 'analytics/analytics.html' },
-        { key: 'plans', label: 'Plans & Pricing', icon: '◎', path: 'plans/plans.html' },
         { key: 'settings', label: 'Settings', icon: '⚙', path: 'settings/settings.html' }
     ];
 
-    const CREATOR_PRIORITY = ['dashboard', 'record', 'my-apis', 'published-apis', 'purchase-requests', 'wallet', 'analytics', 'plans', 'settings'];
-    const BUYER_PRIORITY = ['dashboard', 'marketplace', 'purchased-apis', 'my-purchases', 'plans', 'settings'];
-
     const AUTH_STORAGE_KEY = 'forgeflow.auth';
 
-    const pathTail = (path) => '/' + path.split('?')[0].split('#')[0];
+    const itemsForMode = (mode) => {
+        if (mode === 'creator') return CREATOR_NAV_ITEMS;
+        if (mode === 'buyer') return BUYER_NAV_ITEMS;
+        return ALL_ITEMS;
+    };
 
-    // "My APIs" and "Published APIs" are the same physical page
-    // (my-apis/my-apis.html) distinguished only by ?filter=published, and
-    // "Dashboard"/"Record Workflow" are the same page distinguished only by
-    // the #record-banner hash — matching has to look past the bare path for
-    // both pairs so only one of each ever reads as active at a time.
+    const splitPath = (path) => {
+        const [pathAndQuery, hash] = path.split('#');
+        const [pathOnly, query] = pathAndQuery.split('?');
+        return { pathOnly: '/' + pathOnly, query: query || '', hash: hash ? '#' + hash : '' };
+    };
+
+    // Generic active-link match: an item is active only if its own path
+    // matches AND its own query/hash suffix matches the current URL's — so
+    // pages sharing one physical file but distinguished by ?query (My APIs
+    // vs Published APIs) or #hash (Dashboard vs Record Workflow, Dashboard
+    // vs Run API) never both read as active at once, with no hardcoded
+    // per-key special-casing.
     const isActive = (item) => {
         const currentPath = window.location.pathname || '';
         const currentSearch = window.location.search || '';
         const currentHash = window.location.hash || '';
+        const { pathOnly, query, hash } = splitPath(item.path);
 
-        if (!currentPath.endsWith(pathTail(item.path))) {
-            return false;
-        }
-
-        const isPublishedFilter = currentSearch.includes('filter=published');
-        if (item.key === 'published-apis') return isPublishedFilter;
-        if (item.key === 'my-apis') return !isPublishedFilter;
-
-        const isRecordHash = currentHash === '#record-banner';
-        if (item.key === 'record') return isRecordHash;
-        if (item.key === 'dashboard') return !isRecordHash;
+        if (!currentPath.endsWith(pathOnly)) return false;
+        if (query && !currentSearch.includes(query)) return false;
+        if (!query && currentSearch.includes('filter=published')) return false;
+        if (hash && currentHash !== hash) return false;
+        if (!hash && currentHash && (currentHash === '#record-banner' || currentHash === '#quick-run-widget')) return false;
 
         return true;
     };
 
-    // Priority keys first (in the given order), then everything else in its
-    // original NAV_ITEMS order — every item is always included.
-    const orderForRole = (role) => {
-        const priority = role === 'creator' ? CREATOR_PRIORITY : role === 'buyer' ? BUYER_PRIORITY : null;
-        if (!priority) return NAV_ITEMS;
-
-        const byKey = new Map(NAV_ITEMS.map((item) => [item.key, item]));
-        const ordered = priority.map((key) => byKey.get(key)).filter(Boolean);
-        const remaining = NAV_ITEMS.filter((item) => !priority.includes(item.key));
-        return [...ordered, ...remaining];
-    };
-
-    const renderNav = (role) => {
+    const renderNav = (mode) => {
         const container = document.getElementById('app-nav');
         if (!container || typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.getURL) {
             return;
         }
 
-        container.innerHTML = orderForRole(role).map((item) => {
+        container.innerHTML = itemsForMode(mode).map((item) => {
             const href = chrome.runtime.getURL(item.path);
             const activeClass = isActive(item) ? ' active' : '';
             return `
@@ -98,10 +121,18 @@
     });
 
     const init = async () => {
-        // Render immediately in the default order so the nav never sits
-        // empty while the role loads, then re-render once (if) a role is
-        // known — a single reflow, same tradeoff every async-loaded stat on
-        // these pages already makes.
+        const container = document.getElementById('app-nav');
+        const declaredMode = container?.dataset?.navMode;
+
+        // The two dashboard pages know their own mode outright — render it
+        // immediately, no async role lookup needed.
+        if (declaredMode === 'creator' || declaredMode === 'buyer') {
+            renderNav(declaredMode);
+            return;
+        }
+
+        // Every other page: render the neutral union immediately so the nav
+        // never sits empty, then re-render once (if) a role is known.
         renderNav(null);
 
         if (!window.ForgeFlowRoles) return;

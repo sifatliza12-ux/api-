@@ -108,7 +108,7 @@ const popupApp = {
         // last visited page" (if on and something was visited) wins,
         // otherwise it falls back to the configured "Default Landing Page".
         const openDashboardTab = async () => {
-            let target = 'dashboard/dashboard.html';
+            let target = 'mode-select/mode-select.html';
 
             if (window.ForgeFlowPreferences) {
                 try {
@@ -130,10 +130,11 @@ const popupApp = {
         // successful login/signup — not on every popup open (see the silent
         // session-restore at the bottom of this file, which deliberately
         // does NOT call this). shared/roles.js remembers the choice per
-        // user id, so this only ever opens once per account; Dashboard also
-        // still guards itself the same way as a fallback, in case this tab
-        // gets closed before a role is picked.
-        const maybeOpenOnboarding = async (user) => {
+        // user id, so this only ever auto-opens once per account; Mode
+        // Selection itself is also reachable any time the user opens the
+        // Dashboard via openDashboardTab() above, so this is just a
+        // first-login convenience, not the only path to it.
+        const maybeOpenModeSelection = async (user) => {
             if (!user?.id || !window.ForgeFlowRoles || typeof chrome === 'undefined' || !chrome.tabs) {
                 return;
             }
@@ -142,9 +143,9 @@ const popupApp = {
                 if (alreadyChosen) {
                     return;
                 }
-                chrome.tabs.create({ url: chrome.runtime.getURL('onboarding/onboarding.html') });
+                chrome.tabs.create({ url: chrome.runtime.getURL('mode-select/mode-select.html') });
             } catch (error) {
-                console.warn('[ForgeFlow][popup] could not check role, skipping onboarding redirect', error);
+                console.warn('[ForgeFlow][popup] could not check role, skipping mode-selection redirect', error);
             }
         };
 
@@ -295,7 +296,7 @@ const popupApp = {
                     clearLoginError();
                     await saveAuthSession(data.token, data.user);
                     passwordInput.value = '';
-                    await maybeOpenOnboarding(data.user);
+                    await maybeOpenModeSelection(data.user);
                     handleFreeTrialNavigation();
                     return;
                 }
@@ -411,7 +412,7 @@ const popupApp = {
                     await saveAuthSession(data.token, data.user);
                     passwordInput.value = '';
                     confirmPasswordInput.value = '';
-                    await maybeOpenOnboarding(data.user);
+                    await maybeOpenModeSelection(data.user);
                     navigateToDashboard();
                     return;
                 }
