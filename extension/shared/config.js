@@ -11,4 +11,4 @@
 // <script> tag (where self === window) and via importScripts() in the
 // background service worker (background/service-worker.js), which has no
 // `window` global at all.
-self.FORGEFLOW_API_BASE = 'http://localhost:5000';
+self.FORGEFLOW_API_BASE = 'https://api-production-6bcb.up.railway.app';
