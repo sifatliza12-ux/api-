@@ -218,7 +218,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const actionButtonHtml = action === 'creator'
             ? `<div class="market-card-actions">
                     <button type="button" class="btn btn-secondary market-edit-btn">Edit</button>
-                    <button type="button" class="btn btn-secondary market-update-btn">Update</button>
                     <button type="button" class="btn btn-secondary market-analytics-btn">Analytics</button>
                </div>`
             : action === 'run'
@@ -560,49 +559,11 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     };
 
-    // "Update" — a creator adjusting the commercial terms of an existing
-    // listing (price). Kept separate from "Edit" (name/description) below
-    // so each button does one obvious thing instead of one dialog trying to
-    // cover every field at once.
-    const handleUpdatePrice = async (item, btn) => {
-        const val = prompt('Enter new price (0 for Free):', String(typeof item.price !== 'undefined' ? item.price : '0'));
-        if (val === null) return;
-        const num = Number(val);
-        if (Number.isNaN(num) || num < 0) {
-            alert('Please enter a valid non-negative number for price.');
-            return;
-        }
-
-        if (btn) btn.disabled = true;
-        try {
-            const resp = await fetch(`${API_BASE}/marketplace/${item.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', ...authHeaders },
-                body: JSON.stringify({ price: num })
-            });
-
-            if (resp.ok) {
-                const idx = marketplaceItems.findIndex((m) => m.id === item.id);
-                if (idx !== -1) {
-                    marketplaceItems[idx].price = num;
-                    marketplaceItems[idx].free = num === 0;
-                }
-                applyMarketplaceFilters();
-                alert('Listing price updated.');
-            } else {
-                const d = await resp.json().catch(() => ({}));
-                alert(d.message || 'Could not update the price. Please try again.');
-            }
-        } catch (err) {
-            console.error('[ForgeFlow][marketplace] update price failed', err);
-            alert('Could not reach the ForgeFlow server. Please try again.');
-        } finally {
-            if (btn) btn.disabled = false;
-        }
-    };
-
     // "Edit" — a creator changing the listing's name/description shown to
-    // buyers, as opposed to its commercial terms (see handleUpdatePrice).
+    // buyers. Price is a Creator-mode-only action now (see "Update Price"
+    // on extension/my-apis/my-apis.js) — this Marketplace page is the
+    // Buyer-mode destination (see shared/nav.js), so buyers browsing it
+    // must only ever see the price, never a control to change it.
     const handleEditListingDetails = async (item, btn) => {
         const newName = prompt('Listing name:', item.name || '');
         if (newName === null) return;
@@ -700,14 +661,6 @@ document.addEventListener('DOMContentLoaded', () => {
             editBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
                 handleEditListingDetails(it, editBtn);
-            });
-        }
-
-        const updateBtn = card.querySelector('.market-update-btn');
-        if (updateBtn) {
-            updateBtn.addEventListener('click', (event) => {
-                event.stopPropagation();
-                handleUpdatePrice(it, updateBtn);
             });
         }
 
@@ -889,7 +842,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const actionsHtml = action === 'creator'
             ? `
                 <button class="btn btn-secondary edit-listing">Edit</button>
-                <button class="btn btn-secondary update-listing">Update</button>
                 <button class="btn btn-secondary view-analytics">Analytics</button>
                 <button class="btn btn-secondary remove-listing">Remove Listing</button>
                 <button class="btn btn-secondary modal-close">Close</button>
@@ -970,11 +922,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const editBtn = overlay.querySelector('.edit-listing');
         if (editBtn) {
             editBtn.addEventListener('click', () => handleEditListingDetails(item, editBtn));
-        }
-
-        const updateBtn = overlay.querySelector('.update-listing');
-        if (updateBtn) {
-            updateBtn.addEventListener('click', () => handleUpdatePrice(item, updateBtn));
         }
 
         const analyticsBtn = overlay.querySelector('.view-analytics');

@@ -33,6 +33,7 @@ const listByOwnerStmt = db.prepare('SELECT * FROM my_apis WHERE owner_id = ? ORD
 const countByOwnerStmt = db.prepare('SELECT COUNT(*) AS count FROM my_apis WHERE owner_id = ?');
 const deleteByIdStmt = db.prepare('DELETE FROM my_apis WHERE id = ?');
 const setPublishedStmt = db.prepare('UPDATE my_apis SET published = ?, updated_at = ? WHERE id = ?');
+const updatePriceStmt = db.prepare('UPDATE my_apis SET price = ?, updated_at = ? WHERE id = ?');
 
 const create = (payload = {}) => {
   const now = new Date().toISOString();
@@ -74,4 +75,19 @@ const setPublished = (id, published) => {
   return getById(id);
 };
 
-module.exports = { create, getById, listByOwner, countByOwner, deleteById, setPublished };
+// Keeps the My APIs record's own price in step with whatever price a
+// creator most recently set (via the publish pricing modal or the
+// Marketplace "Update Price" modal — see myApisController.publishMyApi and
+// marketplaceController.updateMarketplaceItem). Without this,
+// marketplaceStore.upsertForMyApi — which always re-reads price from this
+// table on every publish — would silently reset a listing back to its
+// original price the next time it's unpublished and republished.
+const updatePrice = (id, price) => {
+  const info = updatePriceStmt.run(Number(price), new Date().toISOString(), Number(id));
+  if (info.changes === 0) {
+    return null;
+  }
+  return getById(id);
+};
+
+module.exports = { create, getById, listByOwner, countByOwner, deleteById, setPublished, updatePrice };

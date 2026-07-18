@@ -1,10 +1,12 @@
 /**
  * my-apis.js
  * Dedicated My APIs / Published APIs tab — same backend contract the old
- * in-popup view used (GET/POST/DELETE /api/my-apis, POST /marketplace/publish,
- * POST /api/my-apis/:id/publish), just with room to breathe. "Published
- * APIs" is the same page filtered to published-only via ?filter=published,
- * so the two nav destinations never drift out of sync with each other.
+ * in-popup view used (GET/POST/DELETE /api/my-apis, POST
+ * /api/my-apis/:id/publish — the single authoritative publish/price
+ * endpoint; see backend/controllers/myApisController.js), just with room to
+ * breathe. "Published APIs" is the same page filtered to published-only via
+ * ?filter=published, so the two nav destinations never drift out of sync
+ * with each other.
  */
 
 const API_BASE = window.FORGEFLOW_API_BASE;
@@ -321,6 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button type="button" class="btn btn-secondary btn-sm api-action-btn view-api-btn">View API</button>
                 <button type="button" class="btn btn-secondary btn-sm api-action-btn copy-endpoint-btn" data-original-text="Copy Endpoint">Copy Endpoint</button>
                 <button type="button" class="btn btn-secondary btn-sm api-action-btn publish-api-btn">${api.published ? 'Unpublish' : 'Publish to Marketplace'}</button>
+                ${api.published ? '<button type="button" class="btn btn-secondary btn-sm api-action-btn update-price-btn">Update Price</button>' : ''}
                 <button type="button" class="btn btn-secondary btn-sm api-action-btn download-api-btn">Download</button>
                 <button type="button" class="btn btn-danger btn-sm api-action-btn delete-api-btn">Delete</button>
             </div>
@@ -348,52 +351,90 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const publishBtn = card.querySelector('.publish-api-btn');
+
+        const setPublishState = async (published, extra) => {
+            const mark = await fetch(`${API_BASE}/api/my-apis/${api.id}/publish`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
+                body: JSON.stringify({ published, ...extra })
+            });
+            const data = await mark.json().catch(() => ({}));
+            return { ok: mark.ok, data };
+        };
+
         publishBtn.addEventListener('click', async () => {
-            const willPublish = !api.published;
-            publishBtn.disabled = true;
-            publishBtn.textContent = willPublish ? 'Publishing...' : 'Unpublishing...';
-            try {
-                if (willPublish) {
-                    const mp = await fetch(`${API_BASE}/marketplace/publish`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            name: api.name,
-                            version: api.version,
-                            method: api.method,
-                            endpoint: api.endpoint,
-                            price: api.price || 10,
-                            publisher: 'Demo User'
-                        })
-                    });
-                    const mpData = await mp.json().catch(() => ({}));
-                    if (!mp.ok) {
-                        alert(mpData.message || 'Publishing to marketplace failed.');
+            if (api.published) {
+                publishBtn.disabled = true;
+                publishBtn.textContent = 'Unpublishing...';
+                try {
+                    const { ok, data } = await setPublishState(false);
+                    if (!ok) {
+                        console.warn('[ForgeFlow][my-apis] failed to unpublish', data);
+                        alert(data.message || 'Could not unpublish. Please try again.');
                         publishBtn.disabled = false;
-                        publishBtn.textContent = willPublish ? 'Publish to Marketplace' : 'Unpublish';
+                        publishBtn.textContent = 'Unpublish';
                         return;
                     }
+                    loadApis();
+                } catch (err) {
+                    console.error('[ForgeFlow][my-apis] unpublish failed', err);
+                    alert('Unable to reach the ForgeFlow server. Please try again.');
+                    publishBtn.disabled = false;
+                    publishBtn.textContent = 'Unpublish';
                 }
-
-                const mark = await fetch(`${API_BASE}/api/my-apis/${api.id}/publish`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', ...authHeaders },
-                    body: JSON.stringify({ published: willPublish })
-                });
-
-                if (!mark.ok) {
-                    const d = await mark.json().catch(() => ({}));
-                    console.warn('[ForgeFlow][my-apis] failed to toggle publish state', d);
-                }
-
-                loadApis();
-            } catch (err) {
-                console.error('[ForgeFlow][my-apis] publish toggle failed', err);
-                alert('Unable to change publish state.');
-                publishBtn.disabled = false;
-                publishBtn.textContent = api.published ? 'Unpublish' : 'Publish to Marketplace';
+                return;
             }
+
+            // Publishing requires a price — open the pricing modal instead
+            // of publishing immediately.
+            window.openForgeFlowPricingModal({
+                title: `Publish "${api.name}"`,
+                initialPrice: api.price > 0 ? api.price : '',
+                initialNote: api.description || '',
+                priceHint: 'Buyers pay this amount once to purchase this API.',
+                noteLabel: 'Listing note (optional)',
+                notePlaceholder: 'Anything buyers should know about this API...',
+                submitLabel: 'Publish',
+                submitPendingLabel: 'Publishing…',
+                onSubmit: async (price, note) => {
+                    const { ok, data } = await setPublishState(true, { price, description: note || undefined });
+                    if (!ok) {
+                        return { success: false, message: data.message || 'Could not publish this API. Please try again.' };
+                    }
+                    loadApis();
+                    return { success: true };
+                }
+            });
         });
+
+        // Only rendered for already-published APIs (see buildApiCardHtml) —
+        // pre-publish pricing goes through the Publish button above instead.
+        // Reuses the exact same publish endpoint: calling it with
+        // published:true on an already-published API just updates its price
+        // (and marketplace listing) in place without changing publish state.
+        const updatePriceBtn = card.querySelector('.update-price-btn');
+        if (updatePriceBtn) {
+            updatePriceBtn.addEventListener('click', () => {
+                window.openForgeFlowPricingModal({
+                    title: `Update Price — ${api.name}`,
+                    initialPrice: api.price > 0 ? api.price : '',
+                    initialNote: api.description || '',
+                    priceHint: 'Buyers will pay this amount for future purchases.',
+                    noteLabel: 'Listing note (optional)',
+                    notePlaceholder: 'Anything buyers should know about this API...',
+                    submitLabel: 'Save',
+                    submitPendingLabel: 'Saving…',
+                    onSubmit: async (price, note) => {
+                        const { ok, data } = await setPublishState(true, { price, description: note || undefined });
+                        if (!ok) {
+                            return { success: false, message: data.message || 'Could not update the price. Please try again.' };
+                        }
+                        loadApis();
+                        return { success: true };
+                    }
+                });
+            });
+        }
 
         card.querySelector('.download-api-btn').addEventListener('click', () => {
             try {

@@ -1,6 +1,7 @@
 const marketplaceStore = require('../services/marketplaceStore');
 const marketplacePurchaseStore = require('../services/marketplacePurchaseStore');
 const purchaseRequestStore = require('../services/purchaseRequestStore');
+const myApisStore = require('../services/myApisStore');
 
 // optionalAuth (routes/marketplace.js) means req.user may or may not be set.
 // purchaseCount is public on every listing (same idea as a storefront
@@ -104,8 +105,8 @@ const updateMarketplaceItem = (req, res) => {
 
     if (typeof payload.price !== 'undefined') {
       const newPrice = Number(payload.price);
-      if (Number.isNaN(newPrice) || newPrice < 0) {
-        return res.status(400).json({ success: false, message: 'Price must be a non-negative number' });
+      if (Number.isNaN(newPrice) || newPrice <= 0) {
+        return res.status(400).json({ success: false, message: 'Price must be a number greater than 0.' });
       }
     }
 
@@ -114,6 +115,16 @@ const updateMarketplaceItem = (req, res) => {
     }
 
     const item = marketplaceStore.update(req.params.id, payload);
+
+    // Keeps the underlying My APIs record's price in step with the listing
+    // — upsertForMyApi (myApisController.publishMyApi) always re-reads price
+    // from that record on every publish, so without this an unpublish then
+    // republish would silently revert to whatever price the listing had
+    // before this update.
+    if (item && existing.myApiId && typeof payload.price !== 'undefined') {
+      myApisStore.updatePrice(existing.myApiId, Number(payload.price));
+    }
+
     return res.json({ success: true, item });
   } catch (err) {
     console.error('[Backend] updateMarketplaceItem error', err);

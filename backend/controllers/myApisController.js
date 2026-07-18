@@ -87,6 +87,25 @@ const publishMyApi = (req, res) => {
   // Allow a body flag { published: true/false } to toggle publish state
   const body = req.body || {};
   const published = typeof body.published === 'boolean' ? body.published : true;
+
+  // A price is only meaningful (and required) when actually publishing —
+  // unpublishing never touches it. The ForgeFlow pricing modal
+  // (extension/shared/pricingModal.js) already enforces "> 0" client-side
+  // before this request is ever sent; this is the server-side backstop so
+  // the requirement holds regardless of caller.
+  let price = item.price;
+  if (published) {
+    if (typeof body.price === 'undefined') {
+      return res.status(400).json({ success: false, message: 'A price is required to publish this API.' });
+    }
+    const parsedPrice = Number(body.price);
+    if (Number.isNaN(parsedPrice) || parsedPrice <= 0) {
+      return res.status(400).json({ success: false, message: 'Price must be a number greater than 0.' });
+    }
+    price = parsedPrice;
+    myApisStore.updatePrice(item.id, price);
+  }
+
   const updated = myApisStore.setPublished(item.id, published);
 
   // Mirror the publish state onto the linked workflow's visibility — that's
@@ -102,15 +121,22 @@ const publishMyApi = (req, res) => {
   // caller also happens to hit the separate (legacy) /marketplace/publish
   // route — see marketplaceController.js.
   if (published) {
+    // An optional note from the pricing modal becomes the listing's
+    // description; leaving it blank keeps the API's existing description
+    // instead of blanking it out.
+    const description = typeof body.description === 'string' && body.description.trim()
+      ? body.description.trim()
+      : item.description;
+
     marketplaceStore.upsertForMyApi({
       myApiId: item.id,
       ownerId: item.ownerId,
       name: item.name,
-      description: item.description,
+      description,
       method: item.method,
       version: item.version,
       endpoint: item.endpoint,
-      price: item.price,
+      price,
       publisher: req.user.name || req.user.email
     });
   } else {
