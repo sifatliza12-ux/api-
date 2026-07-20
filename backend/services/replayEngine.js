@@ -234,7 +234,16 @@ const findCoveringCloseControlInPage = ({ cx, cy, marker, exactSource, substring
 
 const findCoveringCloseControl = async (page, blockedLocator) => {
   try {
-    const box = await blockedLocator.boundingBox();
+    // Playwright's own default for boundingBox()'s timeout is 0 — literally
+    // "no timeout" — not "resolves instantly." If the page/renderer is ever
+    // slow to respond (real, observed live against Wikipedia under system
+    // load: an ordinary CDP round-trip that's normally sub-second stalling
+    // for well over a minute), this call has no safety net at all and can
+    // hang far longer than the handful of milliseconds this best-effort
+    // recovery helper is supposed to cost — silently blowing through the
+    // step's own timeoutMs budget from a code path the caller (and the
+    // overall retry deadline) can't see or bound.
+    const box = await blockedLocator.boundingBox({ timeout: 2000 });
     if (!box) return null;
     const found = await page.evaluate(findCoveringCloseControlInPage, {
       cx: box.x + box.width / 2,
@@ -538,7 +547,7 @@ const describeElementAtPoint = async (locator) => {
         text: (top.textContent || '').trim().slice(0, 120),
         isTargetItself: top === el || el.contains(top) || top.contains(el)
       };
-    });
+    }, undefined, { timeout: 2000 });
   } catch (error) {
     return null;
   }
@@ -570,7 +579,7 @@ const describeElementRichly = async (locator) => {
         computedOpacity: style.opacity,
         outerHtmlSnippet: (el.outerHTML || '').slice(0, 400)
       };
-    });
+    }, undefined, { timeout: 2000 });
   } catch (error) {
     return null;
   }
@@ -637,11 +646,17 @@ const captureBlockerDiagnostics = async ({ page, locator, stepIndex, stepType, r
 // library or CSS transition — no site or framework knowledge, just "is the
 // geometry still changing." Never blocks longer than
 // ANIMATION_SETTLE_MAX_CHECKS * ANIMATION_SETTLE_POLL_MS (480ms by
-// default), and returns immediately once two consecutive reads agree.
+// default) PLUS this bounded per-check timeout, and returns immediately
+// once two consecutive reads agree. The explicit timeout matters here for
+// the same reason as findCoveringCloseControl's: boundingBox() defaults to
+// Playwright's "0 = no timeout," so a single slow-to-respond check would
+// otherwise have no bound at all, silently turning this "cheap insurance"
+// helper (see its call site's own comment) into an unbounded stall that
+// eats the calling step's entire time budget.
 const waitForElementToStopMoving = async (locator) => {
   let previousBox = null;
   for (let i = 0; i < ANIMATION_SETTLE_MAX_CHECKS; i += 1) {
-    const box = await locator.boundingBox().catch(() => null);
+    const box = await locator.boundingBox({ timeout: 1000 }).catch(() => null);
     if (!box) {
       // Can't measure (detached, not yet rendered) — don't block the step
       // over this; the caller's own actionability checks already cover
@@ -706,13 +721,27 @@ const inspectElement = async (locator) => {
   // multi-match scan ahead of the actual intended target purely by
   // document order, exactly as happened in production (a "Skip to main
   // content" link beating the real target).
+  // Every Playwright call in this function is given an explicit, short
+  // timeout. Their shared default — confirmed against playwright-core's own
+  // type definitions — is "0 = no timeout," NOT "resolves immediately";
+  // isEnabled() and locator.evaluate() in particular perform their own
+  // actionability-style wait (at minimum, for the element to be attached)
+  // before running. Reproduced live against Wikipedia under real system
+  // load: a single one of these calls, deep inside findBestMatchForCandidate's
+  // per-candidate scan, stalled for 60+ seconds — with no explicit timeout
+  // there was nothing bounding it, so the stall silently blew through the
+  // step's own retry-loop deadline instead of surfacing as one more
+  // ordinary transient failure the backoff loop could react to. inspectElement
+  // runs on every match of every locator candidate, every round of
+  // waitForActionableElement's retry loop — exactly the hot path where an
+  // unbounded call does the most damage.
   try {
     const unreachableOffscreen = await locator.evaluate((el) => {
       const rect = el.getBoundingClientRect();
       const docTop = rect.top + window.scrollY;
       const docLeft = rect.left + window.scrollX;
       return docTop < -1 || docLeft < -1;
-    });
+    }, undefined, { timeout: 1500 });
     if (unreachableOffscreen) {
       result.visible = false;
       return result;
@@ -723,7 +752,7 @@ const inspectElement = async (locator) => {
   }
 
   try {
-    result.enabled = await locator.isEnabled();
+    result.enabled = await locator.isEnabled({ timeout: 1500 });
   } catch (error) {
     result.enabled = true; // Not every element has a meaningful disabled state.
   }
@@ -738,7 +767,7 @@ const inspectElement = async (locator) => {
         return false;
       }
       return !(topElement === el || el.contains(topElement) || topElement.contains(el));
-    });
+    }, undefined, { timeout: 1500 });
   } catch (error) {
     result.covered = false;
   }
@@ -1011,11 +1040,39 @@ const TRANSIENT_ACTION_ERROR_PATTERN = /intercepts pointer events|not attached t
 // dblclick, dynamic_click, calendar_date) ever pass true — a text-fill action
 // has no equivalent "force it anyway" that means anything, so input/change
 // never fall back to it (see the fillField call site below).
+//
+// options.abortIfNavigatedAway is dynamic_click-specific (see that case in
+// runWorkflow's switch). A dynamic_click's whole premise is "select a value
+// from a list dynamically rendered on THIS page" — a list that, by
+// definition, cannot exist on a page already navigated away from. Checked
+// on EVERY iteration of this loop (not just once before the first attempt)
+// because the failure this guards against is a genuine RACE, not a
+// before-the-fact state: confirmed live against Wikipedia, a native
+// Enter-triggered form submit can complete WHILE Playwright is mid-attempt
+// on the suggestion click (the click itself "succeeds" in the sense of
+// dispatching, then Playwright's post-click wait for a scheduled
+// navigation times out against a DIFFERENT, already-in-flight one) — so the
+// page can still be on the ORIGINAL page at the top of this function and
+// only diverge one or more retries later. Without this check, the retry
+// loop searches the NEW (destination) page's text for the same value,
+// which is not just pointless but actively wrong: the identical search
+// text very often reappears as the destination page's own content (e.g.
+// an article titled exactly what was searched for), so it can click the
+// wrong element entirely and hang waiting for a navigation that will never
+// come — this is exactly what turned one recording into "succeeds on some
+// replays, fails on others" purely from timing.
 const performWithRetry = async (page, step, log, timeoutMs, actionFn, parameterValues, options = {}) => {
   const deadline = Date.now() + timeoutMs;
   let attempt = 0;
+  const urlBeforeStep = options.abortIfNavigatedAway ? page.url() : null;
 
   for (;;) {
+    if (urlBeforeStep && page.url() !== urlBeforeStep) {
+      log.strategyUsed = 'navigation-already-occurred';
+      log.actionExecuted = true;
+      return;
+    }
+
     const locator = await waitForActionableElement(page, step, { timeoutMs: Math.max(0, deadline - Date.now()), log, parameterValues });
 
     // Explicit scroll-into-view + wait for any in-flight animation/
@@ -1101,7 +1158,7 @@ const performWithRetry = async (page, step, log, timeoutMs, actionFn, parameterV
         }
 
         try {
-          await locator.evaluate((el) => el.click());
+          await locator.evaluate((el) => el.click(), undefined, { timeout: 2000 });
           log.actionExecuted = true;
           log.jsClickFallbackUsed = true;
           return;
@@ -1337,7 +1394,7 @@ const scrollElement = async (page, selector, x, y, timeoutMs) => {
   await page.locator(selector).evaluate((el, [sx, sy]) => {
     el.scrollLeft = sx;
     el.scrollTop = sy;
-  }, [x, y]);
+  }, [x, y], { timeout: 2000 });
 };
 
 // Playwright's touchscreen API only exposes a single-point tap, no native
@@ -1357,18 +1414,45 @@ const simulateTouch = async (page, gestureType, meta) => {
   }
 };
 
+// Playwright's own discriminator for ".fill() called on something that
+// isn't a fillable <input>/<textarea>/[contenteditable]" (e.g. a real
+// <select>) — verified against playwright-core's actual thrown text. This
+// is deliberately narrow: confirmed live against Wikipedia's real search
+// box, .fill() can also fail for perfectly ordinary TRANSIENT reasons (the
+// element re-rendering, briefly covered, not yet stable) that say nothing
+// about the element's type. Treating every fill() failure as "must be a
+// select" — as this used to — sent those transient failures into
+// selectOption() instead, which then hung for its own full default action
+// timeout against a real <input> (selectOption's actionability wait for
+// "is this a <select>" never resolves), discarding the real error and
+// roughly quintupling the time a single step spent failing before
+// performWithRetry's own retry/backoff loop ever got to react.
+const NOT_FILLABLE_ERROR_PATTERN = /Element is not an <input>/;
+
+// Explicit, bounded timeouts on every action here (matching the click-family
+// convention elsewhere in this file) rather than Playwright's 30s default —
+// by the time fillField runs, waitForActionableElement has already confirmed
+// the element is visible/enabled, so a genuinely actionable element resolves
+// near-instantly; a short timeout here is what caps a single stuck/
+// misclassified attempt instead of letting it silently eat the whole step's
+// time budget in one try.
 const fillField = async (locator, value) => {
   if (typeof value === 'boolean') {
-    await locator.setChecked(value);
+    await locator.setChecked(value, { timeout: 3000 });
     return;
   }
 
+  const text = value === null || typeof value === 'undefined' ? '' : String(value);
+
   try {
-    await locator.fill(value === null || typeof value === 'undefined' ? '' : String(value));
+    await locator.fill(text, { timeout: 3000 });
   } catch (fillError) {
-    // Not a fillable <input>/<textarea>/[contenteditable] (e.g. a <select>) —
-    // fall back to option selection.
-    await locator.selectOption(String(value));
+    if (!NOT_FILLABLE_ERROR_PATTERN.test(fillError?.message || '')) {
+      throw fillError;
+    }
+    // Confirmed not a fillable element (e.g. a <select>) — fall back to
+    // option selection.
+    await locator.selectOption(text, { timeout: 3000 });
   }
 };
 
@@ -1688,7 +1772,7 @@ const tryReopenCalendar = async (page) => {
       for (let i = 0; i < Math.min(count, 8); i += 1) {
         const el = locator.nth(i);
         if (!(await el.isVisible({ timeout: 150 }).catch(() => false))) continue;
-        const name = await el.evaluate((node) => node.getAttribute('aria-label') || node.getAttribute('placeholder') || node.textContent || '').catch(() => '');
+        const name = await el.evaluate((node) => node.getAttribute('aria-label') || node.getAttribute('placeholder') || node.textContent || '', undefined, { timeout: 1000 }).catch(() => '');
         if (CALENDAR_TRIGGER_NAME_PATTERN.test(name)) {
           await el.click({ timeout: 1000 }).catch(() => {});
           return true;
@@ -1828,7 +1912,7 @@ const performCalendarDateClick = async (page, step, parameterValues, log, timeou
       try {
         await retryLocator.click({ timeout: 1000 });
       } catch (retryError) {
-        await retryLocator.evaluate((el) => el.click());
+        await retryLocator.evaluate((el) => el.click(), undefined, { timeout: 2000 });
         log.jsClickFallbackUsed = true;
       }
     }
@@ -2129,8 +2213,7 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
             break;
           }
 
-          case 'click':
-          case 'dynamic_click': {
+          case 'click': {
             // An explicit, bounded timeout (rather than Playwright's own
             // ~30s default) matters specifically for a covered element
             // handed back by waitForActionableElement's recovery-exhausted
@@ -2140,6 +2223,21 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
             // instead of a single attempt silently eating most of the
             // step's whole time budget.
             await performWithRetry(page, step, log, timeoutMs, (locator) => locator.click({ timeout: 3000 }), values, { allowJsClickFallback: true });
+            await waitForPageStability(page, 3000);
+            break;
+          }
+
+          case 'dynamic_click': {
+            // A dynamic_click exists to select a value from a list that's
+            // DYNAMICALLY RENDERED ON THE CURRENT PAGE (a search-suggestion
+            // dropdown, an autocomplete option) — by definition, that list
+            // cannot exist on a page already navigated away from. See
+            // performWithRetry's abortIfNavigatedAway handling for why this
+            // is checked on every retry iteration, not just once up front —
+            // confirmed against live Wikipedia to be a real, timing-
+            // dependent race, not a hypothetical one (see that option's
+            // doc comment for the full reasoning).
+            await performWithRetry(page, step, log, timeoutMs, (locator) => locator.click({ timeout: 3000 }), values, { allowJsClickFallback: true, abortIfNavigatedAway: true });
             await waitForPageStability(page, 3000);
             break;
           }
