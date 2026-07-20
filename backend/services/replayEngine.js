@@ -23,10 +23,48 @@ const NON_CRITICAL_TIMEOUT_MS = 4000;
 const NON_CRITICAL_STEP_TYPES = new Set(['scroll', 'touch']);
 const PLACEHOLDER_PATTERN = /^\{\{(.+)\}\}$/;
 
+// Month-by-month navigation is legitimately slower than a single click: a
+// target several months out on a widget that only advances one month per
+// click, waits for a lazy-loaded fetch each time, and settles the page
+// between clicks can easily need 30+ seconds of real wall-clock time. The
+// previous shared DEFAULT_TIMEOUT_MS (15s, sized for an ordinary click) is
+// what actually caused a legitimate 8-month advance to be reported as a
+// failure — not a broken calendar, just an insufficient clock.
+const CALENDAR_TIMEOUT_MS = 45000;
+
 const BACKOFF_BASE_MS = 250;
 const BACKOFF_MAX_MS = 3000;
 // attempt 0 -> 250ms, 1 -> 500ms, 2 -> 1000ms, 3 -> 2000ms, capped at 3000ms.
 const backoffDelay = (attempt) => Math.min(BACKOFF_BASE_MS * (2 ** attempt), BACKOFF_MAX_MS);
+
+// Polling cadence/cap for waitForElementToStopMoving — generic replacement
+// for "wait for CSS transition/animation to finish." Rather than inspecting
+// computed transition/animation properties (fragile across frameworks and
+// animation libraries), this polls the element's own bounding box a few
+// times a short interval apart and returns as soon as it stops changing —
+// catching a fade/slide-in still in flight even though the element already
+// passes the visible/enabled/not-covered checks, while never waiting any
+// longer than an already-settled element needs (near-zero extra cost).
+const ANIMATION_SETTLE_POLL_MS = 80;
+const ANIMATION_SETTLE_MAX_CHECKS = 6;
+
+// Bounds the "nudge the page to trigger lazy-loaded content" recovery in
+// waitForActionableElement — a handful of scroll-and-wait cycles is enough to
+// mount most infinite-scroll/lazy-rendered targets without turning a
+// genuinely-missing element into a much longer stall.
+const MAX_LAZY_SCROLL_ATTEMPTS = 3;
+
+// Bounds how many times waitForActionableElement will try clearing a
+// confirmed-covered element itself before handing it back anyway. Without
+// this, a permanently undismissable overlay (nothing in the known-selector
+// list, no findable close control, unaffected by Escape) would loop here
+// until the whole step times out — the JS-click fallback in performWithRetry
+// (step 8) would never even get a chance to run, since it only ever sees
+// what this function returns. Handing the covered locator back after a few
+// failed attempts lets Playwright's OWN native click-actionability wait take
+// one more real shot (which resolves plenty of transient/animating cases on
+// its own), and only then escalates to the JS-click fallback if that fails too.
+const MAX_COVERED_RECOVERY_ATTEMPTS = 3;
 
 // ---------------------------------------------------------------------------
 // Blockers: things that sit between the replay and the real target element.
@@ -66,7 +104,26 @@ const OVERLAY_DISMISS_SELECTORS = [
   '[aria-label*="Dismiss" i]',
   '[data-dismiss="modal"]',
   '.modal-close',
-  'button.close'
+  'button.close',
+  // Broader, still-generic patterns — none of these name a specific site.
+  // Ordered from most-specific/least-risky (a real dialog's own close
+  // control) to loosest (any visible glyph/word meaning "not now"), since
+  // dismissCommonOverlays stops at the first visible match.
+  '[role="dialog"] button[aria-label*="close" i]',
+  '[role="dialog"] [aria-label*="close" i]',
+  '[aria-modal="true"] button[aria-label*="close" i]',
+  '[aria-modal="true"] [aria-label*="close" i]',
+  'button[aria-label*="close" i]',
+  '[class*="modal" i] button[aria-label*="close" i]',
+  '[class*="popup" i] button[aria-label*="close" i]',
+  '[class*="overlay" i] button[aria-label*="close" i]',
+  '[class*="newsletter" i] button[aria-label*="close" i]',
+  'button:has-text("No thanks")',
+  'button:has-text("Not now")',
+  'button:has-text("Maybe later")',
+  'button:has-text("Skip")',
+  'button:has-text("×")',
+  'button:has-text("✕")'
 ];
 
 const dismissCommonOverlays = async (page) => {
@@ -86,6 +143,150 @@ const dismissCommonOverlays = async (page) => {
     }
   }
   return null;
+};
+
+const OVERLAY_CLOSE_MARKER_ATTR = 'data-ff-overlay-close-target';
+// Patterns built as strings and compiled INSIDE the page.evaluate call below
+// (never passed as a RegExp argument — Playwright's argument serialization
+// doesn't reliably round-trip RegExp objects, plain strings always do).
+const OVERLAY_CLOSE_EXACT_SOURCE = '^(close|dismiss|no thanks|not now|maybe later|skip|got it|accept all|accept|allow|agree|reject|decline|later|x|×|✕)$';
+const OVERLAY_CLOSE_SUBSTRING_SOURCE = 'close|dismiss|no thanks|not now|maybe later|got it|accept';
+
+// Runs entirely inside the page — given the coordinates of whatever click
+// target is currently covered, finds the element actually sitting on top of
+// it (same elementFromPoint approach as inspectElement/describeElementAtPoint)
+// and searches near THAT element for a close/dismiss control. Generic across
+// any site: a cookie banner, a newsletter popup, a login-prompt modal, a
+// sticky header, or any other fixed-position element blocking the click —
+// nothing here names a specific site or widget. Two search tiers, in order:
+//   1. The covering element itself, or a few ancestors above it, directly
+//      looks like a close control (a real <button>/<a>/[role=button] whose
+//      accessible name matches close/dismiss/skip/etc).
+//   2. Failing that, walk up from the covering element to the nearest
+//      "panel-like" ancestor (role=dialog, aria-modal=true, or a sizeable
+//      fixed/sticky-positioned box) and search ITS descendants for a close
+//      control — this is what catches a modal whose visible "X" sits in a
+//      header far from the exact point that happened to be covered.
+// A match gets a temporary marker attribute so the caller can build a real
+// Playwright locator from it afterwards (evaluate can't return a Locator).
+const findCoveringCloseControlInPage = ({ cx, cy, marker, exactSource, substringSource }) => {
+  document.querySelectorAll(`[${marker}]`).forEach((el) => el.removeAttribute(marker));
+
+  const top = document.elementFromPoint(cx, cy);
+  if (!top) return false;
+
+  const exactPattern = new RegExp(exactSource, 'i');
+  const substringPattern = new RegExp(substringSource, 'i');
+
+  const isVisible = (el) => {
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+
+  const accessibleName = (el) => (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 40);
+
+  const looksLikeCloseControl = (el) => {
+    if (!isVisible(el)) return false;
+    const tag = el.tagName.toLowerCase();
+    const isControl = tag === 'button' || tag === 'a' || el.getAttribute('role') === 'button';
+    if (!isControl) return false;
+    const name = accessibleName(el);
+    if (!name) return false;
+    return exactPattern.test(name) || substringPattern.test(name);
+  };
+
+  let node = top;
+  for (let depth = 0; node && depth < 5; depth += 1) {
+    if (looksLikeCloseControl(node)) {
+      node.setAttribute(marker, '1');
+      return true;
+    }
+    node = node.parentElement;
+  }
+
+  const isPanelLike = (el) => {
+    if (el.getAttribute('role') === 'dialog' || el.getAttribute('aria-modal') === 'true') return true;
+    const style = window.getComputedStyle(el);
+    if (style.position === 'fixed' || style.position === 'sticky') {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 100 && rect.height > 60;
+    }
+    return false;
+  };
+
+  let panel = top;
+  for (let depth = 0; panel && depth < 8; depth += 1) {
+    if (isPanelLike(panel)) break;
+    panel = panel.parentElement;
+  }
+  if (!panel) return false;
+
+  const candidates = panel.querySelectorAll('button, a, [role="button"]');
+  for (const el of candidates) {
+    if (looksLikeCloseControl(el)) {
+      el.setAttribute(marker, '1');
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const findCoveringCloseControl = async (page, blockedLocator) => {
+  try {
+    const box = await blockedLocator.boundingBox();
+    if (!box) return null;
+    const found = await page.evaluate(findCoveringCloseControlInPage, {
+      cx: box.x + box.width / 2,
+      cy: box.y + box.height / 2,
+      marker: OVERLAY_CLOSE_MARKER_ATTR,
+      exactSource: OVERLAY_CLOSE_EXACT_SOURCE,
+      substringSource: OVERLAY_CLOSE_SUBSTRING_SOURCE
+    });
+    return found ? page.locator(`[${OVERLAY_CLOSE_MARKER_ATTR}]`).first() : null;
+  } catch (error) {
+    return null;
+  }
+};
+
+// Single recovery entry point used everywhere a click/action turns out to be
+// blocked: tries the known-selector list first (cheap, handles the common
+// named cases immediately), then — only once a REAL blocking element is
+// confirmed (blockedLocator is non-null) — the targeted covering-element
+// search above, then Escape as a last resort. Escape is deliberately gated
+// on blockedLocator being present: with nothing confirmed to be in the way
+// (the target simply doesn't exist/render yet), there's no justification for
+// it, and it could just as easily close something useful still in progress
+// (an autocomplete dropdown the very next step needs) as a genuine
+// obstruction. Returns a short descriptor for logging, or null if nothing
+// was attempted / nothing helped.
+const tryRecoverFromBlocker = async (page, blockedLocator) => {
+  const commonDismissed = await dismissCommonOverlays(page);
+  if (commonDismissed) {
+    return `dismissed:${commonDismissed}`;
+  }
+
+  if (!blockedLocator) {
+    return null;
+  }
+
+  const closeControl = await findCoveringCloseControl(page, blockedLocator);
+  if (closeControl) {
+    try {
+      await closeControl.click({ timeout: 1000 });
+      return 'dismissed:covering-element-close-control';
+    } catch (error) {
+      // Marked element vanished/became unclickable between detection and
+      // click — fall through to the Escape-key attempt below.
+    }
+  }
+
+  try {
+    await page.keyboard.press('Escape');
+    return 'attempted:escape-key';
+  } catch (error) {
+    return null;
+  }
 };
 
 // Loading spinners/skeletons aren't clicked away — they resolve on their own.
@@ -275,23 +476,78 @@ const describeElementAtPoint = async (locator) => {
   }
 };
 
-// Diagnostic capture for click interception (requirement: "I need to see
-// what the blocker actually is"). Fires only on an actual interception event
-// — a Playwright click-time error, or a terminal "covered" timeout — never
-// on every poll of the retry loop, so this stays cheap enough not to slow
-// down a healthy replay. Screenshots land in backend/debug/ (gitignored).
-const captureBlockerDiagnostics = async ({ page, locator, stepIndex, stepType, reason, playwrightError }) => {
+// Richer than describeElementAtPoint — describes the MATCHED element
+// itself (not whatever covers it), for diagnosing exactly why it wasn't
+// actionable: its live bounding box, whether that box actually falls inside
+// the current viewport, its computed display/visibility/opacity (the real
+// CSS reason isVisible() said false — "display:none" and "off-screen but
+// technically rendered" look identical from isVisible() alone), and a
+// truncated outerHTML snippet so a failure can be diagnosed without needing
+// to reproduce it locally.
+const describeElementRichly = async (locator) => {
+  try {
+    return await locator.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      const style = window.getComputedStyle(el);
+      return {
+        tag: el.tagName,
+        id: el.id || null,
+        classes: (el.className && typeof el.className === 'string') ? el.className : null,
+        ariaLabel: el.getAttribute('aria-label') || null,
+        text: (el.textContent || '').trim().slice(0, 120),
+        boundingBox: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
+        inViewport: rect.top >= 0 && rect.left >= 0 && rect.bottom <= window.innerHeight && rect.right <= window.innerWidth,
+        computedDisplay: style.display,
+        computedVisibility: style.visibility,
+        computedOpacity: style.opacity,
+        outerHtmlSnippet: (el.outerHTML || '').slice(0, 400)
+      };
+    });
+  } catch (error) {
+    return null;
+  }
+};
+
+// Human-readable "what selector/strategy was actually tried" for logging —
+// generic across every locator strategy findBestMatchForCandidate can walk.
+const describeCandidate = (candidate) => {
+  if (!candidate) return null;
+  if (candidate.strategy === 'role') return `role:${candidate.role}${candidate.name ? `[name="${candidate.name}"]` : ''}`;
+  return `${candidate.strategy}:${candidate.value || ''}`;
+};
+
+// Diagnostic capture for a failed/blocked interaction (requirement: "I need
+// to see what the blocker actually is" / selector used, match counts,
+// viewport position, computed visibility, screenshot, HTML snippet). Fires
+// on any terminal actionability failure — not just interception — so a
+// "not visible" or "not found" failure gets exactly the same diagnostic
+// depth as a "covered" one. Never on every poll of the retry loop, so this
+// stays cheap enough not to slow down a healthy replay. Screenshots land in
+// backend/debug/ (gitignored).
+const captureBlockerDiagnostics = async ({ page, locator, stepIndex, stepType, reason, playwrightError, selectorUsed, matchCount, visibleCount }) => {
   const diagnostics = {
     stepIndex,
     stepType,
     reason: reason || null,
+    selectorUsed: selectorUsed || null,
+    matchCount: typeof matchCount === 'number' ? matchCount : null,
+    visibleCount: typeof visibleCount === 'number' ? visibleCount : null,
     playwrightError: playwrightError || null,
     timestamp: new Date().toISOString(),
+    pageUrl: null,
+    pageTitle: null,
+    viewport: null,
     blockerAtPoint: null,
+    matchedElement: null,
     screenshotPath: null
   };
 
+  try { diagnostics.pageUrl = page.url(); } catch (error) { /* page may already be closed */ }
+  try { diagnostics.pageTitle = await page.title(); } catch (error) { /* best-effort only */ }
+  try { diagnostics.viewport = page.viewportSize(); } catch (error) { /* best-effort only */ }
+
   diagnostics.blockerAtPoint = locator ? await describeElementAtPoint(locator) : null;
+  diagnostics.matchedElement = locator ? await describeElementRichly(locator) : null;
 
   try {
     if (!fs.existsSync(DEBUG_DIR)) fs.mkdirSync(DEBUG_DIR, { recursive: true });
@@ -306,6 +562,36 @@ const captureBlockerDiagnostics = async ({ page, locator, stepIndex, stepType, r
 
   console.warn('[Backend][replay][blocker]', JSON.stringify(diagnostics));
   return diagnostics;
+};
+
+// Polls an element's own bounding box until it stops moving/resizing (or
+// the check budget runs out), then returns. Generic across any animation
+// library or CSS transition — no site or framework knowledge, just "is the
+// geometry still changing." Never blocks longer than
+// ANIMATION_SETTLE_MAX_CHECKS * ANIMATION_SETTLE_POLL_MS (480ms by
+// default), and returns immediately once two consecutive reads agree.
+const waitForElementToStopMoving = async (locator) => {
+  let previousBox = null;
+  for (let i = 0; i < ANIMATION_SETTLE_MAX_CHECKS; i += 1) {
+    const box = await locator.boundingBox().catch(() => null);
+    if (!box) {
+      // Can't measure (detached, not yet rendered) — don't block the step
+      // over this; the caller's own actionability checks already cover
+      // that case separately.
+      return;
+    }
+    if (
+      previousBox
+      && Math.abs(box.x - previousBox.x) < 0.5
+      && Math.abs(box.y - previousBox.y) < 0.5
+      && Math.abs(box.width - previousBox.width) < 0.5
+      && Math.abs(box.height - previousBox.height) < 0.5
+    ) {
+      return; // Settled.
+    }
+    previousBox = box;
+    await locator.page().waitForTimeout(ANIMATION_SETTLE_POLL_MS);
+  }
 };
 
 // Explicit, individually-loggable actionability checks rather than trusting
@@ -359,42 +645,127 @@ const inspectElement = async (locator) => {
   return result;
 };
 
+// Bounds how many same-selector matches findBestMatchForCandidate will walk
+// — real pages rarely have more than a handful of genuine duplicates, and
+// this keeps a pathological "matches 500 elements" selector cheap to check.
+const MAX_MATCHES_PER_CANDIDATE = 12;
+
+// A recorded selector/aria-label/role+name can legitimately match MORE THAN
+// ONE element on a real page — a hidden mobile-only duplicate sitting next
+// to the visible desktop one, a screen-reader-only instance alongside the
+// real one, a stale template node a framework left in the DOM. Binding to
+// whichever happens to be first in document order (Playwright's own
+// default, and what this codebase used to do unconditionally via
+// `.first()`) means a hidden duplicate that merely happens to come first
+// silently blocks the entire step — this is what "element found, but not
+// visible" meant in production on more than one site, even though a
+// genuinely visible, clickable match existed a few elements later. This
+// walks every match of ONE candidate (bounded above), preferring the first
+// fully actionable one over raw document order, and falls back through
+// covered -> disabled -> merely-exists-but-hidden so there's always a real
+// element to report on for diagnostics even when nothing was usable.
+const findBestMatchForCandidate = async (page, candidate) => {
+  let baseLocator;
+  try {
+    baseLocator = locatorFromCandidate(page, candidate);
+  } catch (error) {
+    return { locator: null, matchCount: 0, visibleCount: 0, reason: 'selector could not be evaluated' };
+  }
+
+  let matchCount;
+  try {
+    matchCount = await baseLocator.count();
+  } catch (error) {
+    return { locator: null, matchCount: 0, visibleCount: 0, reason: 'selector could not be evaluated' };
+  }
+
+  if (matchCount === 0) {
+    return { locator: null, matchCount: 0, visibleCount: 0, reason: 'no candidate matched anything on the page' };
+  }
+
+  const scanLimit = Math.min(matchCount, MAX_MATCHES_PER_CANDIDATE);
+  let visibleCount = 0;
+  let bestCovered = null;
+  let bestDisabled = null;
+  let bestHidden = null;
+  let anyExisted = false;
+
+  for (let i = 0; i < scanLimit; i += 1) {
+    const locator = baseLocator.nth(i);
+    const check = await inspectElement(locator);
+    if (!check.exists) continue;
+    anyExisted = true;
+
+    if (!check.visible) {
+      if (!bestHidden) bestHidden = { locator, check };
+      continue;
+    }
+    visibleCount += 1;
+
+    if (check.enabled && !check.covered) {
+      // Ideal match — stop scanning further matches of THIS candidate.
+      return { locator, check, matchCount, visibleCount, reason: null };
+    }
+    if (check.covered && !bestCovered) bestCovered = { locator, check };
+    if (!check.enabled && !bestDisabled) bestDisabled = { locator, check };
+  }
+
+  if (bestCovered) {
+    return { locator: bestCovered.locator, check: bestCovered.check, matchCount, visibleCount, reason: 'element found and visible, but another element covers it', covered: true };
+  }
+  if (bestDisabled) {
+    return { locator: bestDisabled.locator, check: bestDisabled.check, matchCount, visibleCount, reason: 'element found and visible, but disabled' };
+  }
+  if (bestHidden) {
+    // Kept (not null) specifically so a terminal failure can still run rich
+    // diagnostics — computed display/visibility, bounding box, HTML
+    // snippet — against a REAL matched element instead of having nothing
+    // to inspect.
+    return { locator: bestHidden.locator, check: bestHidden.check, matchCount, visibleCount, reason: 'element found, but not visible', hidden: true };
+  }
+  if (anyExisted) {
+    return { locator: null, matchCount, visibleCount, reason: 'element matched but actionability could not be confirmed' };
+  }
+  return { locator: null, matchCount, visibleCount, reason: 'no candidate matched anything on the page' };
+};
+
 // Walks the candidate list once, returning the first one that's fully
-// actionable (exists, visible, enabled, not covered). Reports the specific
-// blocking reason from whichever candidate got furthest, for logging.
+// actionable (exists, visible, enabled, not covered) — searching every
+// MATCH of each candidate (see findBestMatchForCandidate), not just
+// document order's first. Reports the specific blocking reason and the
+// richest diagnostic info seen across every candidate tried, for logging.
 const findActionableCandidate = async (page, candidates) => {
   let bestReason = 'no candidate matched anything on the page';
   // Tracks the furthest-progressed candidate even on failure (specifically
   // the "covered" case) so a terminal timeout can still run blocker
   // diagnostics against a real element instead of having nothing to inspect.
   let bestBlockedLocator = null;
+  // Independent of bestBlockedLocator — the single richest failure info
+  // seen across every candidate, covered or not, for the terminal
+  // diagnostics capture (match/visible counts, selector, a hidden-but-real
+  // element to describe).
+  let bestDiagnostics = null;
 
   for (const candidate of candidates) {
-    let locator;
-    try {
-      locator = locatorFromCandidate(page, candidate).first();
-    } catch (error) {
-      continue;
+    const result = await findBestMatchForCandidate(page, candidate);
+
+    if (result.locator && !result.reason) {
+      return { locator: result.locator, candidate, check: result.check, matchCount: result.matchCount, visibleCount: result.visibleCount };
     }
 
-    const check = await inspectElement(locator);
-    if (check.exists && check.visible && check.enabled && !check.covered) {
-      return { locator, candidate, check };
+    if (!bestDiagnostics || (result.matchCount || 0) > (bestDiagnostics.matchCount || 0)) {
+      bestDiagnostics = { candidate, ...result };
     }
 
-    if (check.exists && check.visible && check.covered) {
-      bestReason = 'element found and visible, but another element covers it';
-      bestBlockedLocator = locator;
-    } else if (check.exists && check.visible && !check.enabled) {
-      bestReason = 'element found and visible, but disabled';
-    } else if (check.exists && !check.visible) {
-      bestReason = 'element found, but not visible';
-    } else if (check.exists) {
-      bestReason = 'element matched but actionability could not be confirmed';
+    if (result.covered) {
+      bestReason = result.reason;
+      bestBlockedLocator = result.locator;
+    } else if (!bestBlockedLocator) {
+      bestReason = result.reason || bestReason;
     }
   }
 
-  return { locator: null, candidate: null, check: null, reason: bestReason, bestBlockedLocator };
+  return { locator: null, candidate: null, check: null, reason: bestReason, bestBlockedLocator, diagnostics: bestDiagnostics };
 };
 
 // The structured-retry-with-backoff loop requirement (5): rather than one
@@ -410,6 +781,9 @@ const waitForActionableElement = async (page, step, { timeoutMs, log, parameterV
   let attempt = 0;
   let lastReason = 'no candidate locators were recorded for this step';
   let lastBlockedLocator = null;
+  let lastDiagnostics = null;
+  let lazyScrollAttempts = 0;
+  let coveredAttempts = 0;
 
   while (Date.now() < deadline) {
     await waitForLoadingIndicatorsToClear(page, Math.min(1500, Math.max(0, deadline - Date.now())));
@@ -420,18 +794,55 @@ const waitForActionableElement = async (page, step, { timeoutMs, log, parameterV
       log.elementFound = true;
       log.strategyUsed = found.candidate.strategy;
       log.strategyValue = found.candidate.value || `${found.candidate.role || ''}:${found.candidate.name || ''}`;
+      log.matchCount = found.matchCount;
+      log.visibleCount = found.visibleCount;
       return found.locator;
     }
 
     lastReason = found.reason;
+    if (found.diagnostics) {
+      lastDiagnostics = found.diagnostics;
+    }
     if (found.bestBlockedLocator) {
       lastBlockedLocator = found.bestBlockedLocator;
+      coveredAttempts += 1;
+
+      // A handful of recovery attempts against the SAME covered element is
+      // enough to know whether anything here is actually going to clear it.
+      // Handing it back now — rather than looping until the whole step
+      // times out — is what lets performWithRetry's real click attempt (and
+      // its JS-click last resort) ever run at all for a genuinely
+      // undismissable overlay.
+      if (coveredAttempts > MAX_COVERED_RECOVERY_ATTEMPTS) {
+        log.retries = attempt;
+        log.elementFound = true;
+        log.strategyUsed = 'covered-handoff';
+        return found.bestBlockedLocator;
+      }
     }
 
-    const dismissed = await dismissCommonOverlays(page);
-    if (dismissed) {
-      log.blockersDismissed = (log.blockersDismissed || []).concat(dismissed);
-      continue; // Something was actually in the way — re-check immediately, no need to burn a backoff delay.
+    const recovery = await tryRecoverFromBlocker(page, found.bestBlockedLocator);
+    if (recovery) {
+      log.blockersDismissed = (log.blockersDismissed || []).concat(recovery);
+      // A short, bounded pause even on a "something happened" result — a
+      // recovery attempt that didn't actually change anything (e.g. Escape
+      // against a modal that ignores it) would otherwise spin this loop as
+      // fast as the event loop allows; the very next check reveals whether
+      // it helped, so there's nothing gained by not pausing here too.
+      await page.waitForTimeout(Math.min(300, Math.max(0, deadline - Date.now())));
+      continue;
+    }
+
+    // Nothing covered, nothing to dismiss, and the target still doesn't
+    // exist at all — on sites with infinite-scroll or lazy-rendered lists,
+    // that's very often because it simply hasn't mounted yet. A couple of
+    // scroll nudges (generic across any site — no selector/site knowledge
+    // needed) gives lazy content a chance to render before this gives up.
+    if (!found.bestBlockedLocator && lazyScrollAttempts < MAX_LAZY_SCROLL_ATTEMPTS) {
+      lazyScrollAttempts += 1;
+      await page.mouse.wheel(0, 800).catch(() => {});
+      await waitForLoadingIndicatorsToClear(page, 800);
+      continue;
     }
 
     attempt += 1;
@@ -445,20 +856,28 @@ const waitForActionableElement = async (page, step, { timeoutMs, log, parameterV
   log.retries = attempt;
   log.elementFound = false;
   log.failureReason = lastReason;
+  log.matchCount = lastDiagnostics ? lastDiagnostics.matchCount : 0;
+  log.visibleCount = lastDiagnostics ? lastDiagnostics.visibleCount : 0;
 
-  // Terminal timeout with a real "covered" candidate on hand — capture what
-  // is actually blocking it before giving up, rather than just reporting
-  // "something covers it" with no further detail.
-  if (lastBlockedLocator) {
-    const diagnostics = await captureBlockerDiagnostics({
-      page,
-      locator: lastBlockedLocator,
-      stepIndex: step.index,
-      stepType: step.type,
-      reason: lastReason
-    });
-    log.blockerDiagnostics = (log.blockerDiagnostics || []).concat(diagnostics);
-  }
+  // Terminal failure — capture full diagnostics (selector used, match/
+  // visible counts, viewport position, computed visibility, a screenshot,
+  // and an HTML snippet of whatever element WAS found, even if it wasn't
+  // actionable) regardless of WHICH reason it failed for. Previously this
+  // only fired for the "covered" case, so a "not visible" or "not found"
+  // failure — the exact shape reported in production — left no screenshot
+  // or element detail behind at all to diagnose it from.
+  const diagnosticLocator = lastBlockedLocator || (lastDiagnostics && lastDiagnostics.locator) || null;
+  const diagnostics = await captureBlockerDiagnostics({
+    page,
+    locator: diagnosticLocator,
+    stepIndex: step.index,
+    stepType: step.type,
+    reason: lastReason,
+    selectorUsed: lastDiagnostics ? describeCandidate(lastDiagnostics.candidate) : null,
+    matchCount: lastDiagnostics ? lastDiagnostics.matchCount : 0,
+    visibleCount: lastDiagnostics ? lastDiagnostics.visibleCount : 0
+  });
+  log.blockerDiagnostics = (log.blockerDiagnostics || []).concat(diagnostics);
 
   throw new Error(`No actionable element found for step (tried ${candidates.length} locator candidate(s)): ${lastReason}`);
 };
@@ -473,12 +892,28 @@ const waitForActionableElement = async (page, step, { timeoutMs, log, parameterV
 
 const TRANSIENT_ACTION_ERROR_PATTERN = /intercepts pointer events|not attached to the dom|element is not attached|detached/i;
 
-const performWithRetry = async (page, step, log, timeoutMs, actionFn, parameterValues) => {
+// options.allowJsClickFallback gates the last-resort recovery in step 8 of
+// the replay-robustness requirement: only click-family actions (click,
+// dblclick, dynamic_click, calendar_date) ever pass true — a text-fill action
+// has no equivalent "force it anyway" that means anything, so input/change
+// never fall back to it (see the fillField call site below).
+const performWithRetry = async (page, step, log, timeoutMs, actionFn, parameterValues, options = {}) => {
   const deadline = Date.now() + timeoutMs;
   let attempt = 0;
 
   for (;;) {
     const locator = await waitForActionableElement(page, step, { timeoutMs: Math.max(0, deadline - Date.now()), log, parameterValues });
+
+    // Explicit scroll-into-view + wait for any in-flight animation/
+    // transition to settle before every action — Playwright's own click()
+    // already scrolls implicitly, but a custom scroll container, a sticky
+    // header that re-covers the target right as it scrolls into place, or a
+    // fade/slide-in still animating even after the element passes every
+    // other actionability check can all still race an implicit scroll.
+    // Doing it explicitly, with an adaptive settle wait (not a blind fixed
+    // one), is cheap insurance and never fails the step (best-effort only).
+    await locator.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
+    await waitForElementToStopMoving(locator);
 
     try {
       await actionFn(locator);
@@ -504,12 +939,40 @@ const performWithRetry = async (page, step, log, timeoutMs, actionFn, parameterV
         log.blockerDiagnostics = (log.blockerDiagnostics || []).concat(diagnostics);
       }
 
-      if (remaining <= 0 || !isTransient) {
+      const attemptsExhausted = remaining <= 0;
+
+      // Last-resort fallback, only reached after every normal retry already
+      // failed on a genuine interception. Playwright's own actionability
+      // model correctly refuses to click something it can see is visually
+      // covered — exactly right for a real user — but a persistent,
+      // undismissable overlay (rare, but real on some sites) would otherwise
+      // fail the whole workflow over a purely cosmetic obstruction. A native
+      // DOM el.click() bypasses the covering-element check entirely, so it's
+      // gated tightly: only for click-family actions (never a text fill),
+      // and only once every other recovery attempt in this loop has already
+      // run out — never used in place of a real attempt.
+      if (isTransient && attemptsExhausted && options.allowJsClickFallback) {
+        try {
+          await locator.evaluate((el) => el.click());
+          log.actionExecuted = true;
+          log.jsClickFallbackUsed = true;
+          return;
+        } catch (jsClickError) {
+          // The JS click didn't help either — nothing left to try, fall
+          // through to the original Playwright error below.
+        }
+      }
+
+      if (attemptsExhausted || !isTransient) {
         throw error;
       }
+
       attempt += 1;
       log.retries = (log.retries || 0) + 1;
-      await dismissCommonOverlays(page);
+      const recovery = await tryRecoverFromBlocker(page, locator);
+      if (recovery) {
+        log.blockersDismissed = (log.blockersDismissed || []).concat(recovery);
+      }
       await page.waitForTimeout(Math.min(backoffDelay(attempt), remaining));
     }
   }
@@ -632,16 +1095,127 @@ const fillField = async (locator, value) => {
 // the parameter into a real calendar date, then search the LIVE page for a
 // day cell that matches that date by structure/attributes, not by whatever
 // exact string the widget happened to render on the day it was recorded.
-// If the visible month doesn't contain that date yet, this drives the
-// calendar's own "next month" control forward and re-checks — a bounded
-// number of times — so the same step keeps working long after the
-// recording date has passed and the widget has moved on.
+//
+// Navigation is MONTH-AWARE, not a blind "click next N times": every
+// iteration first detects which month(s) the widget is actually showing
+// right now (supporting a two-month-at-once display, common on travel
+// sites' check-in/check-out pickers), compares that against the target
+// month, and only searches for/clicks the day cell once the right month is
+// confirmed on screen. This is what makes the same logic work identically
+// whether the widget is one month behind the target or eleven — and, just
+// as importantly, what lets it detect a click that silently failed to
+// change anything (a disabled nav button, an animation that swallowed the
+// click) instead of drifting through a stuck loop for the whole time budget.
+// Nothing here is specific to any one site or calendar framework — every
+// check is a structural/accessibility signal (role, aria-label, aria-live,
+// aria-expanded, aria-disabled) or a generic "Month YYYY" text pattern.
 // ---------------------------------------------------------------------------
 
 const MONTH_NAMES_EN = [
   'january', 'february', 'march', 'april', 'may', 'june',
   'july', 'august', 'september', 'october', 'november', 'december'
 ];
+
+// Runs entirely inside the page — finds every calendar-like "currently
+// displayed month" caption on the page right now. Generic across single-
+// and dual-month calendar widgets: returns one entry per distinct month
+// header found (requirement: handle calendars that display two months
+// simultaneously), rather than betting on exactly one. Search order:
+//   1. Inside anything structurally calendar-shaped (role=grid/application,
+//      or a class/data-testid/aria-label containing "calendar"/"datepicker"),
+//      look for its own heading/caption element.
+//   2. If nothing matched at all, fall back to any short, visible "Month
+//      YYYY" text anywhere on the page — some frameworks render the month
+//      caption as a page-level sibling rather than inside the grid itself.
+const MONTH_NAME_PATTERN_SOURCE = 'jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?';
+const CALENDAR_ROOT_QUERY = '[role="grid"], [role="application"], [class*="calendar" i], [data-testid*="calendar" i], [data-testid*="datepicker" i], [aria-label*="calendar" i]';
+const MONTH_HEADING_QUERY = '[role="heading"], caption, h1, h2, h3, h4, [aria-live], [class*="caption" i], [class*="month" i], [class*="header" i]';
+
+const findDisplayedMonthsInPage = ({ monthNamesSource, monthNames, rootQuery, headingQuery }) => {
+  const monthPattern = new RegExp(`\\b(${monthNamesSource})\\.?\\s+(\\d{4})\\b`, 'i');
+
+  const isVisible = (el) => {
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+
+  const parseMonthYear = (text) => {
+    const match = text.match(monthPattern);
+    if (!match) return null;
+    const idx = monthNames.findIndex((name) => name.startsWith(match[1].toLowerCase().slice(0, 3)));
+    return idx >= 0 ? { month: idx, year: Number(match[2]) } : null;
+  };
+
+  const results = [];
+  const seen = new Set();
+  const addIfNew = (parsed) => {
+    const key = `${parsed.year}-${parsed.month}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      results.push(parsed);
+    }
+  };
+
+  document.querySelectorAll(rootQuery).forEach((root) => {
+    if (!isVisible(root)) return;
+    for (const el of root.querySelectorAll(headingQuery)) {
+      if (!isVisible(el)) continue;
+      const text = (el.textContent || '').trim();
+      if (!text || text.length > 40) continue; // A real month caption is short — a paragraph merely containing a date isn't one.
+      const parsed = parseMonthYear(text);
+      if (parsed) {
+        addIfNew(parsed);
+        break; // Only the first matching heading per root — avoid double-counting nested headings.
+      }
+    }
+  });
+
+  if (results.length === 0) {
+    for (const el of document.querySelectorAll(headingQuery)) {
+      if (!isVisible(el)) continue;
+      const text = (el.textContent || '').trim();
+      if (!text || text.length > 40) continue;
+      const parsed = parseMonthYear(text);
+      if (parsed) addIfNew(parsed);
+      if (results.length >= 2) break;
+    }
+  }
+
+  return results;
+};
+
+const getDisplayedMonths = async (page) => {
+  try {
+    return await page.evaluate(findDisplayedMonthsInPage, {
+      monthNamesSource: MONTH_NAME_PATTERN_SOURCE,
+      monthNames: MONTH_NAMES_EN,
+      rootQuery: CALENDAR_ROOT_QUERY,
+      headingQuery: MONTH_HEADING_QUERY
+    });
+  } catch (error) {
+    return [];
+  }
+};
+
+const monthKey = ({ month, year }) => year * 12 + month;
+
+const isTargetMonthDisplayed = (displayedMonths, targetKey) => displayedMonths.some((m) => monthKey(m) === targetKey);
+
+// Signed month distance from whichever currently-displayed month is closest
+// to the target — positive means "navigate forward," negative means
+// "navigate backward." This is what makes a dual-month display navigate
+// correctly: the SECOND pane can already be past the target even while the
+// first pane isn't there yet, so using the closest of the two (not just the
+// first) avoids overshooting or oscillating.
+const closestMonthDistance = (displayedMonths, targetKey) => {
+  if (!displayedMonths.length) return null;
+  let best = null;
+  for (const m of displayedMonths) {
+    const diff = targetKey - monthKey(m);
+    if (best === null || Math.abs(diff) < Math.abs(best)) best = diff;
+  }
+  return best;
+};
 
 // Accepts whatever a calendar_date parameter's value actually is: the
 // classifier's own ISO normalization ("2026-07-30"), a plain Date-parseable
@@ -670,11 +1244,28 @@ const CALENDAR_MARKER_ATTR = 'data-ff-cal-target';
 // Runs entirely inside the page (page.evaluate) — searches for a day cell
 // whose own data-date/datetime attribute OR parsed aria-label matches the
 // target date, across several common calendar-widget conventions at once
-// rather than betting on exactly one. A match gets a temporary marker
-// attribute stamped on it so the caller can build a real Playwright locator
-// from it afterwards (evaluate can't return a Locator, only data).
+// rather than betting on exactly one. Returns a status rather than a bare
+// boolean so the caller can tell "not on the page at all" apart from "found,
+// but the widget marks it disabled/unavailable" (requirement: handle
+// disabled dates) — the second case is a fundamentally different failure
+// that no amount of further month-navigation will ever fix. A genuine match
+// gets a temporary marker attribute stamped on it so the caller can build a
+// real Playwright locator from it afterwards (evaluate can't return a
+// Locator, only data); an enabled cell always wins over a disabled one with
+// the same date, in case a widget momentarily renders both during a
+// transition.
 const findCalendarCellInPage = ({ day, month, year, marker, monthNames }) => {
   document.querySelectorAll(`[${marker}]`).forEach((el) => el.removeAttribute(marker));
+
+  // Nested (not a module-level function) deliberately — everything this
+  // page.evaluate callback touches has to be self-contained, since it runs
+  // serialized in the browser with no access to outer Node.js closures.
+  const isDisabledCalendarCell = (el) => {
+    if (el.disabled) return true;
+    if (el.getAttribute('aria-disabled') === 'true') return true;
+    const cls = (el.className && typeof el.className === 'string') ? el.className.toLowerCase() : '';
+    return /\bdisabled\b|\bunavailable\b|\bblocked\b|\bnot-?allowed\b/.test(cls);
+  };
 
   const parseDateFromLabel = (label) => {
     if (!label) return null;
@@ -699,66 +1290,167 @@ const findCalendarCellInPage = ({ day, month, year, marker, monthNames }) => {
     '[data-date], [data-day], [datetime], [role="gridcell"], [role="button"][aria-label], td[aria-label], span[aria-label], div[aria-label], button[aria-label]'
   );
 
+  let sawDisabledMatch = false;
+
   for (const el of candidates) {
     const rect = el.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) continue;
 
+    let isMatch = false;
     const dataDate = el.getAttribute('data-date') || el.getAttribute('datetime');
     if (dataDate) {
       const parsed = new Date(dataDate);
       if (!Number.isNaN(parsed.getTime()) && parsed.getFullYear() === year && parsed.getMonth() === month && parsed.getDate() === day) {
-        el.setAttribute(marker, '1');
-        return true;
+        isMatch = true;
+      }
+    }
+    if (!isMatch) {
+      const parsedLabel = parseDateFromLabel(el.getAttribute('aria-label'));
+      if (parsedLabel && parsedLabel.day === day && parsedLabel.month === month && parsedLabel.year === year) {
+        isMatch = true;
       }
     }
 
-    const ariaLabel = el.getAttribute('aria-label');
-    const parsedLabel = parseDateFromLabel(ariaLabel);
-    if (parsedLabel && parsedLabel.day === day && parsedLabel.month === month && parsedLabel.year === year) {
-      el.setAttribute(marker, '1');
-      return true;
+    if (!isMatch) continue;
+
+    if (isDisabledCalendarCell(el)) {
+      sawDisabledMatch = true;
+      continue; // Keep scanning — an enabled duplicate elsewhere should still win.
     }
+
+    el.setAttribute(marker, '1');
+    return 'found';
   }
 
-  return false;
+  return sawDisabledMatch ? 'disabled' : 'not_found';
 };
 
 const findCalendarCellForDate = async (page, targetDate) => {
-  const found = await page.evaluate(findCalendarCellInPage, {
+  const status = await page.evaluate(findCalendarCellInPage, {
     day: targetDate.getDate(),
     month: targetDate.getMonth(),
     year: targetDate.getFullYear(),
     marker: CALENDAR_MARKER_ATTR,
     monthNames: MONTH_NAMES_EN
   });
-  return found ? page.locator(`[${CALENDAR_MARKER_ATTR}]`).first() : null;
+  return { status, locator: status === 'found' ? page.locator(`[${CALENDAR_MARKER_ATTR}]`).first() : null };
 };
 
+// Semantic-first, most-specific-to-least-specific: an accessible name that
+// explicitly says "next/previous month" is essentially unambiguous; a bare
+// "next"/"prev" aria-label is looser but still an accessibility signal, not
+// a guess; the handful of framework class names at the end are a last
+// resort for widgets with no accessible name at all. Nothing here names a
+// specific site.
 const NEXT_MONTH_SELECTORS = [
+  'button[aria-label*="next month" i]',
   '[aria-label*="next month" i]',
-  'button[aria-label*="Next" i]',
+  '[role="button"][aria-label*="next" i]',
+  'button[aria-label*="next" i]',
   '[data-testid*="next" i][data-testid*="month" i]',
   '.react-datepicker__navigation--next',
   '.next-month',
   '.datepicker-next'
 ];
 
-const clickNextMonthControl = async (page) => {
-  for (const selector of NEXT_MONTH_SELECTORS) {
+const PREV_MONTH_SELECTORS = [
+  'button[aria-label*="previous month" i]',
+  '[aria-label*="previous month" i]',
+  '[role="button"][aria-label*="prev" i]',
+  'button[aria-label*="prev" i]',
+  '[data-testid*="prev" i][data-testid*="month" i]',
+  '.react-datepicker__navigation--previous',
+  '.prev-month',
+  '.datepicker-prev'
+];
+
+const clickMonthNavControl = async (page, direction) => {
+  const selectors = direction === 'next' ? NEXT_MONTH_SELECTORS : PREV_MONTH_SELECTORS;
+  for (const selector of selectors) {
     try {
       const control = page.locator(selector).first();
-      if (await control.isVisible({ timeout: 200 })) {
-        await control.click({ timeout: 1000 });
-        return true;
-      }
+      if (!(await control.isVisible({ timeout: 200 }))) continue;
+      const disabled = await control.isDisabled({ timeout: 200 }).catch(() => false);
+      if (disabled) continue;
+      await control.click({ timeout: 1000 });
+      return true;
     } catch (error) {
-      // Not present/visible — try the next selector.
+      // Not present/visible/enabled — try the next selector.
     }
   }
   return false;
 };
 
-const MAX_MONTH_ADVANCES = 14;
+// Some calendar widgets fully unmount (not just visually hide) after
+// certain interactions, losing the grid AND its nav controls entirely
+// (requirement: handle calendars that require reopening after navigation).
+// Best-effort and generic: looks for a currently-visible, closed control
+// (aria-expanded="false", a common convention for any disclosure widget —
+// combobox, popover trigger, date field) whose accessible name suggests a
+// date field, and clicks it to reopen. No site or widget-library knowledge.
+const CALENDAR_TRIGGER_NAME_PATTERN = /date|check.?in|check.?out|calendar|arrival|departure|when\b/i;
+const CALENDAR_REOPEN_TRIGGER_SELECTORS = [
+  '[aria-haspopup="dialog"][aria-expanded="false"]',
+  '[aria-haspopup="grid"][aria-expanded="false"]',
+  '[role="combobox"][aria-expanded="false"]',
+  'input[aria-expanded="false"]',
+  'button[aria-expanded="false"]'
+];
+
+const tryReopenCalendar = async (page) => {
+  for (const selector of CALENDAR_REOPEN_TRIGGER_SELECTORS) {
+    try {
+      const locator = page.locator(selector);
+      const count = await locator.count();
+      for (let i = 0; i < Math.min(count, 8); i += 1) {
+        const el = locator.nth(i);
+        if (!(await el.isVisible({ timeout: 150 }).catch(() => false))) continue;
+        const name = await el.evaluate((node) => node.getAttribute('aria-label') || node.getAttribute('placeholder') || node.textContent || '').catch(() => '');
+        if (CALENDAR_TRIGGER_NAME_PATTERN.test(name)) {
+          await el.click({ timeout: 1000 }).catch(() => {});
+          return true;
+        }
+      }
+    } catch (error) {
+      // Selector unsupported in this engine build, or nothing matched —
+      // try the next candidate.
+    }
+  }
+  return false;
+};
+
+// Poll-based, not a fixed sleep: waits for the DISPLAYED month to actually
+// change rather than assuming a click's effect landed within some guessed
+// delay. This is what makes navigation reliable against calendars that
+// lazy-load future months over the network — a slow widget gets exactly as
+// long as it needs (up to the cap below), and a fast one doesn't wait any
+// longer than necessary.
+const WAIT_FOR_MONTH_CHANGE_MS = 4000;
+
+const waitForMonthChange = async (page, previousMonths, timeoutMs = WAIT_FOR_MONTH_CHANGE_MS) => {
+  const deadline = Date.now() + timeoutMs;
+  const previousKeys = new Set(previousMonths.map(monthKey));
+  while (Date.now() < deadline) {
+    const current = await getDisplayedMonths(page);
+    if (current.length > 0 && current.some((m) => !previousKeys.has(monthKey(m)))) {
+      return current;
+    }
+    await page.waitForTimeout(150);
+  }
+  return getDisplayedMonths(page);
+};
+
+// Outer safety ceiling only — in normal operation the time-based deadline
+// below (see CALENDAR_TIMEOUT_MS in runWorkflow) governs how long this can
+// run; this just guarantees termination even if the clock and this counter
+// somehow disagree.
+const MAX_MONTH_ADVANCES = 36;
+// Consecutive month-navigation clicks that don't actually change the
+// displayed month before giving up — catches a nav control that LOOKS
+// clickable (visible, not aria-disabled) but is a no-op at the widget's own
+// lazy-loaded range boundary, rather than burning the rest of the time
+// budget on a stuck loop.
+const MAX_STALL_RETRIES = 3;
 
 // Same idea as captureBlockerDiagnostics, for the other way a calendar step
 // can fail: not because something is covering the target, but because no
@@ -768,11 +1460,12 @@ const MAX_MONTH_ADVANCES = 14;
 // detection strategies. Screenshots + a DOM summary of whatever *does* look
 // calendar-shaped on the page turns "no cell found" into an actionable next
 // step instead of a dead end.
-const captureCalendarDiagnostics = async ({ page, stepIndex, targetDate, monthAdvances }) => {
+const captureCalendarDiagnostics = async ({ page, stepIndex, targetDate, monthAdvances, monthLog }) => {
   const diagnostics = {
     stepIndex,
     targetDate: targetDate.toDateString(),
     monthAdvances,
+    monthLog: monthLog || [],
     timestamp: new Date().toISOString(),
     domSummary: null,
     screenshotPath: null
@@ -819,45 +1512,168 @@ const performCalendarDateClick = async (page, step, parameterValues, log, timeou
   if (!targetDate) {
     throw new Error(`Could not parse a calendar date from value "${rawValue}"`);
   }
+  const targetKey = monthKey({ month: targetDate.getMonth(), year: targetDate.getFullYear() });
 
   const deadline = Date.now() + timeoutMs;
+  const monthLog = [];
   let monthAdvances = 0;
+  let stallCount = 0;
+  let reopenAttempted = false;
+
+  const clickResolvedCell = async (found) => {
+    await found.locator.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
+    await waitForElementToStopMoving(found.locator);
+
+    try {
+      await found.locator.click();
+    } catch (clickError) {
+      // Same last-resort chain as every other click-family step (see
+      // performWithRetry) — only for a genuine interception, and only after
+      // the normal click already failed once. Requirement 11 (retry when
+      // the calendar re-renders): re-resolve the cell fresh rather than
+      // reusing the possibly-stale locator, in case the click itself
+      // triggered a re-render.
+      if (!TRANSIENT_ACTION_ERROR_PATTERN.test(clickError?.message || '')) {
+        throw clickError;
+      }
+      const recovery = await tryRecoverFromBlocker(page, found.locator);
+      if (recovery) {
+        log.blockersDismissed = (log.blockersDismissed || []).concat(recovery);
+      }
+      const refound = await findCalendarCellForDate(page, targetDate);
+      const retryLocator = refound.status === 'found' ? refound.locator : found.locator;
+      try {
+        await retryLocator.click({ timeout: 1000 });
+      } catch (retryError) {
+        await retryLocator.evaluate((el) => el.click());
+        log.jsClickFallbackUsed = true;
+      }
+    }
+
+    log.actionExecuted = true;
+  };
 
   while (Date.now() < deadline) {
+    // Proactive, selector-based only (never the Escape-key fallback) — a
+    // blind Escape here would risk closing the calendar widget itself
+    // before its cell is ever clicked. The stronger recovery (including
+    // Escape) is reserved for the reactive path inside clickResolvedCell,
+    // once a real click on an actual cell has already confirmed something
+    // else is on top of it.
     const dismissed = await dismissCommonOverlays(page);
     if (dismissed) {
       log.blockersDismissed = (log.blockersDismissed || []).concat(dismissed);
     }
 
-    const cell = await findCalendarCellForDate(page, targetDate);
-    if (cell) {
-      log.strategyUsed = 'calendar-semantic';
-      log.retries = monthAdvances;
-      log.elementFound = true;
-      await cell.click();
-      log.actionExecuted = true;
-      return;
+    // Requirements 1, 2, 13: detect the currently displayed month(s) before
+    // doing anything else, and log every iteration.
+    let displayedMonths = await getDisplayedMonths(page);
+    monthLog.push({
+      iteration: monthAdvances,
+      displayed: displayedMonths.map((m) => `${MONTH_NAMES_EN[m.month]} ${m.year}`),
+      timestamp: new Date().toISOString()
+    });
+    console.log('[Backend][replay][calendar] month check', JSON.stringify(monthLog[monthLog.length - 1]));
+
+    // Requirement 8: some widgets fully unmount the calendar after certain
+    // interactions — try reopening it once (best-effort) before concluding
+    // it's genuinely gone from the page.
+    if (displayedMonths.length === 0 && !reopenAttempted) {
+      reopenAttempted = true;
+      if (await tryReopenCalendar(page)) {
+        await waitForPageStability(page, 1500);
+        displayedMonths = await getDisplayedMonths(page);
+      }
+    }
+
+    // Requirement 9 (verify the target day exists before attempting the
+    // click): only search for the actual cell once the target's month is
+    // confirmed visible — or when month-detection itself found nothing at
+    // all (some widgets have no parseable caption), falling back to the
+    // page-wide search so that case never regresses versus a direct look.
+    if (displayedMonths.length === 0 || isTargetMonthDisplayed(displayedMonths, targetKey)) {
+      const found = await findCalendarCellForDate(page, targetDate);
+
+      if (found.status === 'found') {
+        log.strategyUsed = 'calendar-semantic';
+        log.retries = monthAdvances;
+        log.elementFound = true;
+        log.calendarMonthLog = monthLog;
+        await clickResolvedCell(found);
+        return;
+      }
+
+      if (found.status === 'disabled') {
+        // Requirement 7: the target date exists but the widget marks it
+        // unavailable (already booked/blocked/in the past per the site's
+        // own rules) — a fundamentally different failure than "not found,"
+        // and no amount of further month-navigation will ever fix it, so
+        // fail fast with a distinct, clear reason instead of burning the
+        // rest of the time budget.
+        log.elementFound = false;
+        log.calendarMonthLog = monthLog;
+        log.failureReason = `Target date ${targetDate.toDateString()} was found but is disabled/unavailable on this calendar`;
+        const diagnostics = await captureCalendarDiagnostics({ page, stepIndex: step.index, targetDate, monthAdvances, monthLog });
+        log.calendarDiagnostics = diagnostics;
+        throw new Error(log.failureReason);
+      }
     }
 
     if (monthAdvances >= MAX_MONTH_ADVANCES) {
       break;
     }
 
-    const advanced = await clickNextMonthControl(page);
+    // Requirements 3, 5, 6: navigate intelligently instead of blindly
+    // advancing. The signed distance from whichever currently-displayed
+    // month is CLOSEST to the target decides direction — correct for a
+    // dual-month display, since its second pane can already be past the
+    // target even while the first pane isn't there yet.
+    const distance = closestMonthDistance(displayedMonths, targetKey);
+    const direction = distance === null || distance >= 0 ? 'next' : 'previous';
+    const beforeClickMonths = displayedMonths;
+
+    const advanced = await clickMonthNavControl(page, direction);
     monthAdvances += 1;
     log.retries = monthAdvances;
+
     if (!advanced) {
-      // No next-month control found at all — waiting longer won't help,
-      // but a couple of quick retries covers a slow-rendering calendar.
-      await page.waitForTimeout(Math.min(backoffDelay(monthAdvances), Math.max(0, deadline - Date.now())));
+      // No nav control found/visible/enabled at all — could be a slow
+      // render, or a widget that lazy-mounts its own control. A few quick
+      // retries covers that without paying the full backoff ladder cost
+      // every single time.
+      await page.waitForTimeout(Math.min(backoffDelay(Math.min(monthAdvances, 4)), Math.max(0, deadline - Date.now())));
       continue;
     }
+
+    // Requirement 6: lazy-loading calendars don't necessarily finish
+    // rendering the new month the instant the click resolves — poll for the
+    // displayed month(s) to actually change rather than a fixed sleep.
+    const afterClickMonths = await waitForMonthChange(page, beforeClickMonths, Math.min(WAIT_FOR_MONTH_CHANGE_MS, Math.max(500, deadline - Date.now())));
+
+    // Drift/stall detection: if the displayed month didn't actually change,
+    // the click may have silently failed (a disabled-but-not-aria-disabled
+    // nav button, an animation that swallowed the click, the widget's own
+    // lazy-loaded range boundary) — give it a few more tries before giving
+    // up on this direction entirely, rather than looping for the whole
+    // remaining time budget on a stuck widget.
+    const beforeKey = beforeClickMonths.length ? monthKey(beforeClickMonths[0]) : null;
+    const afterKey = afterClickMonths.length ? monthKey(afterClickMonths[0]) : null;
+    if (beforeKey !== null && afterKey === beforeKey) {
+      stallCount += 1;
+      if (stallCount > MAX_STALL_RETRIES) {
+        break;
+      }
+    } else {
+      stallCount = 0;
+    }
+
     await waitForPageStability(page, 1000);
   }
 
   log.elementFound = false;
+  log.calendarMonthLog = monthLog;
   log.failureReason = `No calendar cell found for ${targetDate.toDateString()} after advancing ${monthAdvances} month(s)`;
-  const diagnostics = await captureCalendarDiagnostics({ page, stepIndex: step.index, targetDate, monthAdvances });
+  const diagnostics = await captureCalendarDiagnostics({ page, stepIndex: step.index, targetDate, monthAdvances, monthLog });
   log.calendarDiagnostics = diagnostics;
   throw new Error(log.failureReason);
 };
@@ -972,7 +1788,9 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
         const page = tracker.current;
         log.urlBefore = page.url();
         log.url = log.urlBefore;
-        const timeoutMs = NON_CRITICAL_STEP_TYPES.has(step.type) ? NON_CRITICAL_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+        const timeoutMs = step.type === 'calendar_date'
+          ? CALENDAR_TIMEOUT_MS
+          : (NON_CRITICAL_STEP_TYPES.has(step.type) ? NON_CRITICAL_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
 
         switch (step.type) {
           case 'navigation': {
@@ -1037,13 +1855,21 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
 
           case 'click':
           case 'dynamic_click': {
-            await performWithRetry(page, step, log, timeoutMs, (locator) => locator.click(), values);
+            // An explicit, bounded timeout (rather than Playwright's own
+            // ~30s default) matters specifically for a covered element
+            // handed back by waitForActionableElement's recovery-exhausted
+            // path (see MAX_COVERED_RECOVERY_ATTEMPTS) — it gives
+            // Playwright's own native actionability wait one real, bounded
+            // shot before performWithRetry's JS-click fallback takes over,
+            // instead of a single attempt silently eating most of the
+            // step's whole time budget.
+            await performWithRetry(page, step, log, timeoutMs, (locator) => locator.click({ timeout: 3000 }), values, { allowJsClickFallback: true });
             await waitForPageStability(page, 3000);
             break;
           }
 
           case 'dblclick': {
-            await performWithRetry(page, step, log, timeoutMs, (locator) => locator.dblclick(), values);
+            await performWithRetry(page, step, log, timeoutMs, (locator) => locator.dblclick({ timeout: 3000 }), values, { allowJsClickFallback: true });
             await waitForPageStability(page, 3000);
             break;
           }
@@ -1051,7 +1877,7 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
           case 'input':
           case 'change': {
             const value = substitutePlaceholders(step.value, values);
-            await performWithRetry(page, step, log, timeoutMs, (locator) => fillField(locator, value), values);
+            await performWithRetry(page, step, log, timeoutMs, (locator) => fillField(locator, value), values, { allowJsClickFallback: false });
             break;
           }
 
