@@ -38,6 +38,11 @@ const popupApp = {
 
         const AUTH_BASE_URL = `${window.FORGEFLOW_API_BASE}/api/auth`;
         const AUTH_STORAGE_KEY = 'forgeflow.auth';
+        const PROFILE_OVERRIDES_KEY = 'forgeflow.profileOverrides';
+
+        const clearProfileOverrides = () => new Promise((resolve) => {
+            chrome.storage.local.remove(PROFILE_OVERRIDES_KEY, resolve);
+        });
 
         // chrome.storage.local (not .session) so a login survives closing and
         // reopening the browser, not just the popup — that's what "session
@@ -323,7 +328,18 @@ const popupApp = {
                 }
             }
 
+            const loggedOutUserId = session?.user?.id || null;
+
+            // Full teardown: the auth session, any locally-cached profile
+            // overrides, and this user's Creator/Buyer role choice — so a
+            // fresh login (same or different account) never inherits
+            // leftover state from the previous session.
             await clearAuthSession();
+            await clearProfileOverrides();
+            if (loggedOutUserId && window.ForgeFlowRoles) {
+                await window.ForgeFlowRoles.clearRole(loggedOutUserId);
+            }
+
             signupView.hidden = true;
             dashboardView.hidden = true;
             loginView.hidden = false;

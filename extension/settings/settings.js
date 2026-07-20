@@ -380,16 +380,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.warn('[ForgeFlow][settings] logout request failed, clearing local session anyway', err);
             }
         }
+
+        const loggedOutUserId = session?.user?.id || null;
+
+        // Full teardown: the auth session itself, any locally-cached profile
+        // overrides (previously left in place, so the profile card kept
+        // showing the old name/username after logout), and this user's
+        // Creator/Buyer role choice.
         await clearAuthSession();
-        currentUser = null;
-        authHeaders = {};
-        renderProfile();
-        updateSecurityGatedUI();
-        await loadAccount();
-        if (authNote) {
-            authNote.hidden = false;
-            authNote.textContent = "You've been logged out. Log in again from the ForgeFlow extension popup.";
+        await setStorageValue(PROFILE_OVERRIDES_KEY, {});
+        if (loggedOutUserId && window.ForgeFlowRoles) {
+            await window.ForgeFlowRoles.clearRole(loggedOutUserId);
         }
+
+        // Settings has no login form of its own — the popup is the only
+        // login screen in the app, so send the user there instead of
+        // leaving them on a page whose nav/notifications chrome still looks
+        // fully signed-in.
+        window.location.href = chrome.runtime.getURL('popup/popup.html');
     };
 
     const openDeleteAccountModal = () => {
@@ -492,9 +500,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentUser = data.user;
                 await saveAuthSession(session.token, data.user);
             } else {
-                currentUser = session.user || null;
+                // Server explicitly rejected this token (expired, or logged
+                // out from another tab) — don't keep trusting the cached
+                // user, discard the stale session like popup.js already does.
+                await clearAuthSession();
+                currentUser = null;
+                authHeaders = {};
             }
         } catch (err) {
+            // Couldn't reach the server at all — keep the cached user rather
+            // than logging out over a network blip, unlike an explicit 401.
             console.warn('[ForgeFlow][settings] could not verify session, using cached user', err);
             currentUser = session.user || null;
         }

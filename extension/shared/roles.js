@@ -43,6 +43,19 @@
         return role === 'creator' || role === 'buyer';
     };
 
+    // Called on logout — removes just this user's entry so a shared browser
+    // profile's other saved accounts (if any) are untouched, and the next
+    // login starts fresh at Mode Selection instead of re-using a stale role.
+    const clearRole = (userId) => new Promise((resolve) => {
+        if (!userId || !hasChromeStorage()) { resolve(); return; }
+        getAllRoles().then((all) => {
+            if (!(String(userId) in all)) { resolve(); return; }
+            const next = { ...all };
+            delete next[String(userId)];
+            chrome.storage.local.set({ [ROLES_KEY]: next }, resolve);
+        });
+    });
+
     // Fires `callback(newRole)` whenever this user's role changes from *any*
     // open ForgeFlow tab (including this one, for symmetry with the storage
     // API's own semantics). Returns an unsubscribe function.
@@ -57,5 +70,5 @@
         return () => chrome.storage.onChanged.removeListener(listener);
     };
 
-    window.ForgeFlowRoles = { getRole, setRole, hasChosenRole, onRoleChange };
+    window.ForgeFlowRoles = { getRole, setRole, hasChosenRole, clearRole, onRoleChange };
 })();

@@ -49,8 +49,10 @@ const STATUS_LABELS = {
     rejected: 'Rejected'
 };
 
+const BKASH_NUMBER = (window.FORGEFLOW_PAYMENT_CONFIG && window.FORGEFLOW_PAYMENT_CONFIG.bkash && window.FORGEFLOW_PAYMENT_CONFIG.bkash.number) || '';
+
 const PAYMENT_METHODS = [
-    { value: 'bkash', label: 'bKash', instructions: 'Send Money to 01700-000000 (Personal), then enter the Transaction ID shown in your bKash confirmation SMS.' },
+    { value: 'bkash', label: 'bKash', instructions: `Send Money to ${BKASH_NUMBER} (Personal), then enter the Transaction ID shown in your bKash confirmation SMS.` },
     { value: 'nagad', label: 'Nagad', instructions: 'Send Money to 01700-000000 (Personal), then enter the Transaction ID shown in your Nagad confirmation SMS.' },
     { value: 'rocket', label: 'Rocket', instructions: 'Send Money to 01700-000000-1 (Personal), then enter the Transaction ID shown in your Rocket confirmation SMS.' },
     { value: 'bank_transfer', label: 'Bank Transfer', instructions: 'Transfer to ForgeFlow Ltd., Account No. 0000-1111-2222, DBBL. Enter the transfer reference/transaction ID from your bank receipt.' }
