@@ -427,11 +427,78 @@ const captureStepScreenshot = async (page, stepIndex) => {
   }
 };
 
+// Drops trailing classes from a multi-class CSS selector, most-specific
+// first — e.g. "div.foo.bar.baz" -> "div.foo.bar" -> tried again next round
+// -> "div.foo". Returns null when there's nothing left to relax (a bare
+// tag, an id selector, an attribute selector, or already a single class).
+// Generic string manipulation only — no site knowledge.
+const relaxCssSelector = (selector) => {
+  const match = String(selector || '').match(/^([a-zA-Z][a-zA-Z0-9]*)((?:\.[a-zA-Z0-9_-]+)+)$/);
+  if (!match) return null;
+  const classes = match[2].split('.').filter(Boolean);
+  if (classes.length <= 1) return null;
+  return `${match[1]}.${classes.slice(0, classes.length - 1).join('.')}`;
+};
+
+// A plausible ARIA role guessed from the recorded tag name — used only as
+// a last-resort candidate when nothing else about a step is left to try.
+const TAG_TO_ROLE = {
+  button: 'button', a: 'link', input: 'textbox', textarea: 'textbox',
+  select: 'combobox', option: 'option', img: 'img',
+  h1: 'heading', h2: 'heading', h3: 'heading', h4: 'heading', li: 'listitem'
+};
+
+const firstFewWords = (text, n) => text.split(/\s+/).filter(Boolean).slice(0, n).join(' ');
+
+// Last-resort, semantic-relocation candidates (requirement 4: "always
+// relocate elements using text/role/aria/label/placeholder/nearby context
+// instead of recorded indexes"). Only ever reached once every recorded
+// locator/selector for this step has already failed to produce anything
+// actionable — derives LOOSER ways to relocate the SAME recorded element
+// from its own metadata (a shorter version of its CSS selector, a
+// shortened text search using just the first few words of its recorded
+// visible text, a role inferred from its recorded tag), never any new,
+// site-specific knowledge. Placeholder values ("{{name}}", for input/
+// change/dynamic_click/calendar_date steps) are deliberately never used as
+// search text — that string was never actually visible on any page.
+const buildRelaxedCandidates = (step) => {
+  const relaxed = [];
+
+  const relaxedSelector = step.selector ? relaxCssSelector(step.selector) : null;
+  if (relaxedSelector) {
+    relaxed.push({ strategy: 'css', value: relaxedSelector });
+  }
+
+  const isPlaceholder = typeof step.value === 'string' && PLACEHOLDER_PATTERN.test(step.value);
+  const recordedText = (!isPlaceholder && typeof step.value === 'string') ? step.value.trim() : '';
+
+  if (recordedText && recordedText.length <= 200) {
+    const shortText = firstFewWords(recordedText, 4);
+    if (shortText && shortText.length >= 2) {
+      relaxed.push({ strategy: 'text', value: shortText });
+
+      const inferredRole = TAG_TO_ROLE[String(step.meta?.tag || '').toLowerCase()];
+      if (inferredRole) {
+        relaxed.push({ strategy: 'role', role: inferredRole, name: shortText });
+      }
+    }
+  }
+
+  return relaxed;
+};
+
 const getCandidateList = (step, parameterValues) => {
   if (step.type === 'dynamic_click' && step.value) {
     try {
       const currentValue = substitutePlaceholders(step.value, parameterValues || {});
       if (currentValue !== null && typeof currentValue !== 'undefined' && String(currentValue).trim()) {
+        // Deliberately the ONLY candidate when a live value is available —
+        // a stale structural/text fallback must never get a chance to win
+        // a race against a suggestion that's still one network round-trip
+        // away from rendering (see the historical "recorded Dhaka, still
+        // selects Dhaka after asking for London" failure this guards
+        // against). waitForActionableElement's own retry loop already
+        // re-runs this same fresh search every round.
         return [{ strategy: 'text', value: String(currentValue).trim() }];
       }
     } catch (error) {
@@ -446,6 +513,7 @@ const getCandidateList = (step, parameterValues) => {
   if (step.selector) {
     candidates.push({ strategy: 'css', value: step.selector });
   }
+  candidates.push(...buildRelaxedCandidates(step));
   return candidates;
 };
 
@@ -961,6 +1029,23 @@ const performWithRetry = async (page, step, log, timeoutMs, actionFn, parameterV
     await locator.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
     await waitForElementToStopMoving(locator);
 
+    // Cheap, side-effect-free pre-flight check for click-family actions —
+    // Playwright's trial mode runs its full actionability + hit-testing
+    // logic without actually dispatching the click, catching nuances (exact
+    // hit-testing edge cases, pointer-events:none) this file's own manual
+    // inspectElement checks don't replicate. Purely diagnostic (never
+    // blocks the real attempt below); its failure reason feeds straight
+    // into the log so a terminal failure can say WHY a recovery attempt
+    // was expected to fail, not just that it did (requirement 6).
+    if (options.allowJsClickFallback) {
+      try {
+        await locator.click({ trial: true, timeout: 800 });
+        log.trialClickReason = null;
+      } catch (trialError) {
+        log.trialClickReason = trialError.message;
+      }
+    }
+
     try {
       await actionFn(locator);
       log.actionExecuted = true;
@@ -987,25 +1072,43 @@ const performWithRetry = async (page, step, log, timeoutMs, actionFn, parameterV
 
       const attemptsExhausted = remaining <= 0;
 
-      // Last-resort fallback, only reached after every normal retry already
-      // failed on a genuine interception. Playwright's own actionability
-      // model correctly refuses to click something it can see is visually
-      // covered — exactly right for a real user — but a persistent,
-      // undismissable overlay (rare, but real on some sites) would otherwise
-      // fail the whole workflow over a purely cosmetic obstruction. A native
-      // DOM el.click() bypasses the covering-element check entirely, so it's
-      // gated tightly: only for click-family actions (never a text fill),
-      // and only once every other recovery attempt in this loop has already
-      // run out — never used in place of a real attempt.
+      // Last-resort chain, only reached after every normal retry already
+      // failed on a genuine interception/timeout. Playwright's own
+      // actionability model correctly refuses to click something it can
+      // see is visually covered or unstable — exactly right for a real
+      // user — but a persistent, undismissable overlay (rare, but real on
+      // some sites) would otherwise fail the whole workflow over a purely
+      // cosmetic obstruction. Two tiers, most- to least-faithful:
+      //   1. force:true — still a REAL, trusted browser mouse event (so a
+      //      site checking event.isTrusted still sees a genuine click),
+      //      just with the actionability/hit-testing wait skipped, since
+      //      that's already been retried extensively above.
+      //   2. a native DOM el.click() via JS — bypasses every actionability
+      //      check entirely, least faithful (not guaranteed to read as a
+      //      trusted event on every site), but still better than failing
+      //      the whole workflow over a purely cosmetic obstruction.
+      // Both gated tightly: only for click-family actions (never a text
+      // fill), and only once every other recovery attempt has run out —
+      // never used in place of a real attempt.
       if (isTransient && attemptsExhausted && options.allowJsClickFallback) {
+        try {
+          await locator.click({ force: true, timeout: 1000 });
+          log.actionExecuted = true;
+          log.forceClickFallbackUsed = true;
+          return;
+        } catch (forceClickError) {
+          log.forceClickFailureReason = forceClickError.message;
+        }
+
         try {
           await locator.evaluate((el) => el.click());
           log.actionExecuted = true;
           log.jsClickFallbackUsed = true;
           return;
         } catch (jsClickError) {
-          // The JS click didn't help either — nothing left to try, fall
-          // through to the original Playwright error below.
+          // Neither fallback helped — nothing left to try, fall through to
+          // the original Playwright error below.
+          log.jsClickFailureReason = jsClickError.message;
         }
       }
 
@@ -1084,6 +1187,140 @@ const resolveUrlTemplate = (urlTemplate, parameterValues) => {
     }
     return encodeURIComponent(String(parameterValues[paramName]));
   });
+};
+
+// A literal value's common survival forms in a URL — same idea as
+// ruleBasedParameterizer.js's urlEncodingVariants, kept as its own small
+// local copy here rather than cross-importing (this module owns replay,
+// not parameterization).
+const urlValueVariants = (rawValue) => {
+  const value = String(rawValue);
+  const percentEncoded = encodeURIComponent(value);
+  const plusEncoded = percentEncoded.replace(/%20/g, '+');
+  return Array.from(new Set([value, percentEncoded, plusEncoded])).filter((v) => v && v.length >= 1);
+};
+
+// The literal values a navigation URL TEMPLATE embeds, resolved to this
+// run's ACTUAL parameter values — what requirement 8 means by "regenerate
+// the URL from current parameter values": not reconstructing and
+// string-comparing a full URL (fragile against param reordering, the site
+// adding its own params, or encoding differences), just the set of values
+// that should appear SOMEWHERE in the live URL if the site reached the
+// same destination on its own.
+const extractTemplatedValues = (urlTemplate, parameterValues) => {
+  if (typeof urlTemplate !== 'string') return [];
+  const values = [];
+  for (const match of urlTemplate.matchAll(EMBEDDED_PLACEHOLDER_PATTERN)) {
+    const paramName = match[1].trim();
+    if (Object.prototype.hasOwnProperty.call(parameterValues, paramName)) {
+      const value = parameterValues[paramName];
+      if (value !== null && typeof value !== 'undefined' && String(value).trim()) {
+        values.push(String(value).trim());
+      }
+    }
+  }
+  return values;
+};
+
+// Is the LIVE page already effectively at this navigation step's
+// destination — reached via whatever actually happened (a click's own
+// navigation, a native form submit, client-side routing several steps
+// back) — so forcing a page.goto() with the recorded/templated URL would
+// be redundant at best and actively WRONG at worst (dragging the browser
+// back to a stale literal, discarding a live, parameter-correct page the
+// site already produced on its own). This is the core of requirement 8:
+// "never depend on replaying a recorded URL if the same page can be
+// reached by replaying the recorded actions." Same origin + pathname, plus
+// every templated value for THIS run present somewhere in the live URL —
+// tracking/session/analytics query-string noise, canonicalized paths'
+// exact casing, and param ordering are deliberately never compared, since
+// none of those change what page a human would say they're looking at.
+const isAlreadyAtNavigationTarget = (currentUrl, urlTemplate, parameterValues) => {
+  let current;
+  let recorded;
+  try {
+    current = new URL(currentUrl);
+    recorded = new URL(resolveUrlTemplate(urlTemplate, parameterValues));
+  } catch (error) {
+    return false;
+  }
+
+  if (current.origin !== recorded.origin || current.pathname !== recorded.pathname) {
+    return false;
+  }
+
+  const templatedValues = extractTemplatedValues(urlTemplate, parameterValues);
+  if (templatedValues.length === 0) {
+    // A fully static URL (no runtime parameters embedded in it at all) —
+    // same origin+pathname is already the strongest signal available;
+    // query-string differences here are tracking/session noise either way.
+    return true;
+  }
+
+  return templatedValues.every((value) => {
+    const variants = urlValueVariants(value);
+    return variants.some((variant) => current.href.includes(variant));
+  });
+};
+
+// page.goto() throwing does NOT necessarily mean navigation didn't happen.
+// ERR_ABORTED in particular is extremely common on real, dynamic sites: the
+// initial navigation gets interrupted by a client-side redirect, a second
+// competing navigation the destination page itself triggers, or the
+// browser simply cancelling the original request once a replacement
+// document starts loading. The correct response is what a human watching
+// the screen would conclude — look at where the browser actually ended up,
+// not trust the promise's rejection blindly. Also retries across a few
+// different waitUntil conditions before giving up entirely: a site that
+// never truly goes networkidle (websockets, polling widgets, ad beacons)
+// would otherwise spuriously fail on that condition alone even though the
+// page loaded completely fine under 'load' or 'domcontentloaded'.
+const NAVIGATION_ABORT_ERROR_PATTERN = /ERR_ABORTED|ERR_FAILED|ERR_HTTP_RESPONSE_CODE_FAILURE|ERR_CONNECTION_CLOSED|Navigation timeout|net::ERR_/i;
+const NAVIGATION_WAIT_STRATEGIES = ['domcontentloaded', 'load', 'networkidle'];
+
+const gotoWithRecovery = async (page, url, { timeoutMs, log } = {}) => {
+  const urlBeforeAttempt = page.url();
+  const budget = timeoutMs || DEFAULT_TIMEOUT_MS;
+  const perAttemptTimeout = Math.max(3000, Math.floor(budget / NAVIGATION_WAIT_STRATEGIES.length));
+
+  let lastError = null;
+
+  for (const waitUntil of NAVIGATION_WAIT_STRATEGIES) {
+    try {
+      await page.goto(url, { waitUntil, timeout: perAttemptTimeout });
+      if (log) log.navigationStrategyUsed = waitUntil;
+      return { navigated: true, finalUrl: page.url() };
+    } catch (error) {
+      lastError = error;
+
+      // Whether or not goto() itself threw, the browser may already have
+      // landed somewhere real — check the LIVE url before deciding this
+      // attempt failed, rather than trusting the rejected promise alone.
+      const currentUrl = page.url();
+      if (currentUrl !== urlBeforeAttempt) {
+        if (log) {
+          log.navigationStrategyUsed = `${waitUntil}-recovered-after-error`;
+          log.navigationRecoveryReason = error.message;
+        }
+        return { navigated: true, finalUrl: currentUrl };
+      }
+
+      const isAbortLike = NAVIGATION_ABORT_ERROR_PATTERN.test(error?.message || '');
+      if (!isAbortLike) {
+        // A genuine failure (DNS, connection refused, malformed URL) — no
+        // waitUntil variant will fix this; retrying three times wastes the
+        // step's whole time budget for no benefit.
+        throw error;
+      }
+      // Abort-class error AND the page genuinely never moved — try the
+      // next, more lenient waitUntil condition.
+    }
+  }
+
+  // Every waitUntil strategy failed AND the page never actually moved —
+  // the one case that's a genuine navigation failure, not just an artifact
+  // of how the wait condition happened to be phrased.
+  throw lastError || new Error(`Navigation to "${url}" did not complete`);
 };
 
 const parseScrollValue = (value) => {
@@ -1840,49 +2077,42 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
 
         switch (step.type) {
           case 'navigation': {
-            // A navigation step recorded immediately after a click is very
-            // often not an independent command at all — content.js records
-            // "the page finished loading" as its own event, so clicking a
-            // real link (a search suggestion, a result, an article link —
-            // exactly the destination a dynamic_click resolves fresh every
-            // run) produces a click step followed by a navigation step
-            // whose literal URL is just whatever that link pointed to
-            // *during recording*. Forcing that frozen URL here would
-            // silently discard whatever the click's OWN, already-correct
-            // navigation just did — the browser already went to "Female"
-            // or "Dune" or "Apple," and this would helpfully drag it back
-            // to "Book"/"Harry Potter"/"Tesla". So: if the previous step
-            // was any kind of click and the page has already moved on from
-            // where it was when that click started, trust that — it's the
-            // live result of whatever value is currently in play, not a
-            // stale recording. Only force the recorded URL when the click
-            // genuinely didn't cause a navigation (a real, independent
-            // navigation step, or a click that just toggled something).
-            const previousStep = i > 0 ? steps[i - 1] : null;
-            const previousLog = stepLog[stepLog.length - 1];
-            const previousWasClick = previousStep && ['click', 'dblclick', 'dynamic_click', 'calendar_date'].includes(previousStep.type);
+            // A navigation step is very often not an independent command at
+            // all — content.js records "the page finished loading" as its
+            // own event, so clicking a real link/suggestion/Search button,
+            // or a native form submit, produces its own navigation, and
+            // this step's literal recorded URL is just whatever that
+            // happened to point to *during recording*. Forcing that frozen
+            // URL here would silently discard whatever the site's own,
+            // already-correct navigation just did — dragging the browser
+            // back to a stale search from months ago instead of trusting
+            // the live result of today's actual parameter values. This is
+            // requirement 8 in full: prefer the live outcome of replaying
+            // the recorded ACTIONS over forcing a recorded URL, whenever
+            // the two already agree — checked generically via
+            // isAlreadyAtNavigationTarget (same origin+pathname, every
+            // templated value for this run present in the live URL;
+            // tracking/session/analytics query noise is never compared),
+            // not by asking "was the previous step specifically a click" —
+            // a scroll, a second click, or anything else in between the
+            // real trigger and this step must not defeat that check.
+            await waitForPageStability(page, Math.min(3000, DEFAULT_TIMEOUT_MS));
+            const dismissedBeforeCheck = await dismissCommonOverlays(page);
+            if (dismissedBeforeCheck) {
+              log.blockersDismissed.push(dismissedBeforeCheck);
+            }
 
-            if (previousWasClick && previousLog) {
-              await waitForPageStability(page, DEFAULT_TIMEOUT_MS);
-              const dismissedAfterClick = await dismissCommonOverlays(page);
-              if (dismissedAfterClick) {
-                log.blockersDismissed.push(dismissedAfterClick);
-              }
-
-              if (page.url() !== previousLog.urlBefore) {
-                log.strategyUsed = 'navigation-already-occurred';
-                log.actionExecuted = true;
-                tracker.remember(page);
-                log.url = page.url();
-                break;
-              }
-              // Click didn't actually change the page — fall through to
-              // the normal forced navigation below.
+            if (isAlreadyAtNavigationTarget(page.url(), step.value, values)) {
+              log.strategyUsed = 'navigation-already-occurred';
+              log.actionExecuted = true;
+              tracker.remember(page);
+              log.url = page.url();
+              break;
             }
 
             const url = resolveUrlTemplate(step.value, values);
             if (url) {
-              await page.goto(url, { waitUntil: 'domcontentloaded', timeout: DEFAULT_TIMEOUT_MS });
+              await gotoWithRecovery(page, url, { timeoutMs: DEFAULT_TIMEOUT_MS, log });
               await waitForPageStability(page, DEFAULT_TIMEOUT_MS);
               // Cookie/consent banners overwhelmingly appear right after a
               // fresh navigation — this is the one moment it's worth
@@ -1958,7 +2188,13 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
             tracker.current = newPage;
             const newPageUrl = resolveUrlTemplate(step.url, values);
             if (newPageUrl) {
-              await newPage.goto(newPageUrl, { waitUntil: 'domcontentloaded', timeout: DEFAULT_TIMEOUT_MS }).catch(() => {});
+              // Same multi-waitUntil recovery as the main navigation case —
+              // a new tab is exactly as likely to hit ERR_ABORTED from a
+              // client-side redirect as the primary page. Best-effort only
+              // (a failed new-tab load has never been treated as fatal
+              // here), but recovering it properly beats silently giving up
+              // on the first waitUntil condition.
+              await gotoWithRecovery(newPage, newPageUrl, { timeoutMs: DEFAULT_TIMEOUT_MS, log }).catch(() => {});
               await waitForPageStability(newPage, DEFAULT_TIMEOUT_MS);
               const dismissed = await dismissCommonOverlays(newPage);
               if (dismissed) {
