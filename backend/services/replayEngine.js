@@ -621,6 +621,39 @@ const inspectElement = async (locator) => {
     return result;
   }
 
+  // Playwright's own isVisible() only checks display/visibility/opacity and
+  // a non-zero box — it does NOT catch a common accessibility pattern that
+  // stays technically visible-per-CSS while being genuinely unreachable: a
+  // "skip to main content" link, screen-reader-only text, etc. positioned
+  // at a fixed, scroll-independent offscreen offset (classically
+  // top:-9999px), specifically so sighted users never see it. Converting
+  // to DOCUMENT coordinates (adding the current scroll offset) is what
+  // makes this precise: if the element's true position is negative, no
+  // scroll position can ever reach it (scrollX/scrollY can't go below 0) —
+  // as opposed to an element that's merely below/right of the CURRENT
+  // scroll position (a large but positive document coordinate), which is
+  // completely ordinary and reachable via scrollIntoViewIfNeeded. Without
+  // this, such an element — often the very first match for a generic
+  // bare-tag selector like "span" on any real site — would win a
+  // multi-match scan ahead of the actual intended target purely by
+  // document order, exactly as happened in production (a "Skip to main
+  // content" link beating the real target).
+  try {
+    const unreachableOffscreen = await locator.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      const docTop = rect.top + window.scrollY;
+      const docLeft = rect.left + window.scrollX;
+      return docTop < -1 || docLeft < -1;
+    });
+    if (unreachableOffscreen) {
+      result.visible = false;
+      return result;
+    }
+  } catch (error) {
+    // Can't determine — don't block on this alone, fall through to the
+    // remaining checks as before.
+  }
+
   try {
     result.enabled = await locator.isEnabled();
   } catch (error) {
@@ -890,7 +923,20 @@ const waitForActionableElement = async (page, step, { timeoutMs, log, parameterV
 // from scratch (not reusing the same locator/handle) on every attempt.
 // ---------------------------------------------------------------------------
 
-const TRANSIENT_ACTION_ERROR_PATTERN = /intercepts pointer events|not attached to the dom|element is not attached|detached/i;
+// Matches Playwright's own error text for anything worth retrying rather
+// than failing the step outright. Originally scoped to interception-only
+// errors ("intercepts pointer events", detached-element races); broadened
+// to also cover Playwright's own native actionability-wait timeout
+// ("Timeout Nms exceeded" — the exact error a locator.click({timeout})
+// throws when its internal wait for visible/enabled/stable/in-viewport
+// never resolves) and its constituent reasons ("outside of the viewport",
+// "not stable"). Without this, a click that failed Playwright's OWN
+// actionability wait — a real production failure mode, not a hypothetical
+// one — skipped this entire retry/recovery/JS-click-fallback pipeline
+// and failed on the very first attempt, identically to how "element
+// found and visible, but another element covers it" used to before the
+// interception recovery work.
+const TRANSIENT_ACTION_ERROR_PATTERN = /intercepts pointer events|not attached to the dom|element is not attached|detached|timeout \d+ms exceeded|outside of the viewport|not stable/i;
 
 // options.allowJsClickFallback gates the last-resort recovery in step 8 of
 // the replay-robustness requirement: only click-family actions (click,
