@@ -300,9 +300,21 @@ const classifyDynamicClick = (event, context = {}) => {
 
   if (meta.inCalendarContext || meta.dateAttr || selectorLooksLikeDate
     || (textClassification && textClassification.type === 'date') || (textClassification && textClassification.type === 'date_range')) {
-    const defaultValue = (selectorLooksLikeDate && selectorClassification.normalized)
-      || (textClassification && textClassification.normalized)
-      || meta.dateAttr
+    // meta.dateAttr (a calendar widget's own machine-readable data-date/
+    // datetime attribute, e.g. "2026-07-31") is the most authoritative
+    // signal available and must win first. The visible click text alone is
+    // often just a bare day number ("31") — classifyValueText correctly
+    // reads that as type:'number' (isPureNumberLike), NOT type:'date' (which
+    // requires a 4-digit year, see dynamicValueDetector.js's HAS_YEAR_PATTERN
+    // guard). Previously textClassification.normalized was tried before
+    // meta.dateAttr regardless of its type, so a bare-day-number click inside
+    // a real calendar silently got a defaultValue of "31" instead of
+    // "2026-07-31" — an unparseable value for calendar_date replay
+    // (parseTargetDate("31") is Invalid Date), and useless for matching
+    // against a URL's checkin/checkout query params later.
+    const defaultValue = meta.dateAttr
+      || (selectorLooksLikeDate && selectorClassification.normalized)
+      || (textClassification && (textClassification.type === 'date' || textClassification.type === 'date_range') && textClassification.normalized)
       || text;
     return {
       kind: 'calendar_date',
@@ -426,6 +438,121 @@ const linkUrlToPendingValue = (rawUrl, paramName, pendingValue) => {
   }
 
   return matched ? `${origin}${rewrittenTail}` : null;
+};
+
+// A second, GENERIC url-linking pass — deliberately not adjacency-based.
+// linkUrlToPendingValue above only ever checks the single parameter that was
+// "pending" immediately before one specific step, so its window closes the
+// moment anything else (a scroll, an unrelated click) happens in between —
+// exactly what happens when a workflow picks two calendar dates and then
+// scrolls/clicks a few more times before the navigation that actually reads
+// them fires. This pass instead takes every parameter the workflow ended up
+// with and checks it against every navigation/new_page URL in the WHOLE
+// workflow, independent of step order or distance. Matching is purely
+// value-based — never a site, host, or query-parameter name — so it applies
+// identically to a booking.com checkin/checkout pair, a totally different
+// site's date range, or any other text/number/date parameter whose recorded
+// value happens to reappear in a URL query string.
+const MIN_GENERIC_URL_MATCH_LENGTH = 3;
+// Matching "true"/"false" against arbitrary URL text is far too likely to
+// hit an unrelated flag that happens to share that literal value — boolean
+// parameters are excluded from this generic sweep for that reason (the
+// adjacency-based pass above never linked them for the same reason).
+const URL_MATCH_EXCLUDED_TYPES = new Set(['boolean']);
+
+// One or more literal strings a given parameter's value might appear as in a
+// URL. For most types this is just its own defaultValue. Date parameters
+// also try the originating calendar_date step's own meta.dateAttr — the
+// widget's own machine-readable ISO date — independent of whatever ended up
+// in defaultValue, so a workflow saved before the dateAttr-first fix above
+// (defaultValue "31" instead of "2026-07-31") still gets linked correctly
+// without needing to be re-recorded.
+const buildUrlSearchCandidates = (parameters, steps) => {
+  const candidates = [];
+  const seen = new Set();
+
+  const addCandidate = (paramName, rawValue) => {
+    if (rawValue === null || typeof rawValue === 'undefined') return;
+    const value = String(rawValue).trim();
+    if (value.length < MIN_GENERIC_URL_MATCH_LENGTH) return;
+    const key = `${paramName}|${value}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push({ paramName, value });
+  };
+
+  (parameters || []).forEach((param) => {
+    if (URL_MATCH_EXCLUDED_TYPES.has(param.type)) return;
+
+    addCandidate(param.name, param.defaultValue);
+
+    if (param.type === 'date') {
+      const originStep = steps[param.eventIndex];
+      const dateAttr = originStep?.meta?.dateAttr;
+      if (dateAttr) addCandidate(param.name, dateAttr);
+    }
+  });
+
+  // Longest value first: a more specific/longer match is tried (and
+  // consumed) before a shorter one that might otherwise be a substring of it
+  // or of an unrelated part of the URL.
+  return candidates.sort((a, b) => b.value.length - a.value.length);
+};
+
+const linkAllUrlsToParameters = (steps, parameters) => {
+  const candidates = buildUrlSearchCandidates(parameters, steps);
+  if (!candidates.length) {
+    return { steps, changed: false };
+  }
+
+  let changed = false;
+
+  const rewriteUrl = (rawUrl) => {
+    if (!rawUrl || typeof rawUrl !== 'string') return rawUrl;
+
+    let origin = '';
+    let tail = rawUrl;
+    try {
+      const parsed = new URL(rawUrl);
+      origin = parsed.origin;
+      tail = rawUrl.slice(origin.length);
+    } catch (error) {
+      // Relative/unparseable as an absolute URL — operate on the whole
+      // string, same fallback linkUrlToPendingValue already relies on.
+    }
+
+    let rewrittenTail = tail;
+    let matchedAny = false;
+
+    for (const { paramName, value } of candidates) {
+      const variants = urlEncodingVariants(value).sort((a, b) => b.length - a.length);
+      for (const variant of variants) {
+        const regex = new RegExp(escapeForRegex(variant), 'g');
+        if (regex.test(rewrittenTail)) {
+          rewrittenTail = rewrittenTail.replace(regex, `{{${paramName}}}`);
+          matchedAny = true;
+        }
+      }
+    }
+
+    if (!matchedAny) return rawUrl;
+    changed = true;
+    return `${origin}${rewrittenTail}`;
+  };
+
+  const nextSteps = steps.map((step) => {
+    if (step.type === 'navigation') {
+      const rewritten = rewriteUrl(step.value);
+      return rewritten === step.value ? step : { ...step, value: rewritten };
+    }
+    if (step.type === 'new_page') {
+      const rewritten = rewriteUrl(step.url);
+      return rewritten === step.url ? step : { ...step, url: rewritten };
+    }
+    return step;
+  });
+
+  return { steps: nextSteps, changed };
 };
 
 const NAME_PREFIX_BY_KIND = {
@@ -685,11 +812,16 @@ const parameterizeWorkflowRuleBased = (events) => {
 
   const deduped = dedupeFieldParameters(parameters, steps);
 
+  // Final, non-adjacency sweep — catches any parameter value that survived
+  // into a navigation/new_page URL further downstream than the per-event
+  // adjacency tracking above could reach (see linkAllUrlsToParameters).
+  const urlLinked = linkAllUrlsToParameters(deduped.steps, deduped.parameters);
+
   console.log('[Backend][pipeline] step 4: workflow template created', {
-    stepCount: deduped.steps.length,
+    stepCount: urlLinked.steps.length,
     parameterCount: deduped.parameters.length
   });
-  return deduped;
+  return { parameters: deduped.parameters, steps: urlLinked.steps };
 };
 
 module.exports = {
@@ -699,5 +831,6 @@ module.exports = {
   looksLikePlausibleSuggestion,
   extractPlaceholderName,
   linkUrlToPendingValue,
+  linkAllUrlsToParameters,
   dedupeFieldParameters
 };

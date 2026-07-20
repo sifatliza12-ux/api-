@@ -14,10 +14,11 @@
 //      rewrite them into calendar_date/dynamic_click steps + add a
 //      parameter (requirements 1-3, 7) — using the ORIGINAL literal text,
 //      captured in step 1 before this step replaces it with a placeholder.
-const { buildDynamicClickUpgrade, extractPlaceholderName, linkUrlToPendingValue, dedupeFieldParameters } = require('./ruleBasedParameterizer');
+const { buildDynamicClickUpgrade, extractPlaceholderName, linkUrlToPendingValue, linkAllUrlsToParameters, dedupeFieldParameters } = require('./ruleBasedParameterizer');
 
 const PLACEHOLDER_PATTERN = /^\{\{.+\}\}$/;
 const PLACEHOLDER_CAPTURE_PATTERN = /^\{\{(.+)\}\}$/;
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const escapeForCssAttr = (value) => String(value).replace(/["\\]/g, '\\$&');
 
@@ -109,6 +110,25 @@ const upgradeLegacyWorkflow = ({ steps, parameters }) => {
       pendingInputParamName = resolvedParamName;
       pendingInputSelector = null;
       pendingInputValue = resolvedParamName ? (defaultValueByParamName.get(resolvedParamName) ?? null) : null;
+
+      // Repairs a defaultValue data-quality bug from an earlier version of
+      // classifyDynamicClick: a bare visible day number ("31") could win
+      // over the calendar widget's own machine-readable date (meta.dateAttr,
+      // "2026-07-31") when this step was first classified. That's not just
+      // cosmetic — it's an invalid value for a date input to show a buyer,
+      // and unparseable by parseTargetDate at replay time whenever no
+      // override is supplied (new Date("31") is Invalid Date). This never
+      // re-classifies the step itself (still skipped, per the guard above),
+      // just corrects the parameter's stored default when a real ISO date
+      // is available and the current one isn't already one.
+      if (step.type === 'calendar_date' && resolvedParamName && step.meta?.dateAttr && ISO_DATE_PATTERN.test(step.meta.dateAttr)) {
+        const paramIndex = nextParameters.findIndex((p) => p.name === resolvedParamName);
+        if (paramIndex !== -1 && !ISO_DATE_PATTERN.test(String(nextParameters[paramIndex].defaultValue)) && nextParameters[paramIndex].defaultValue !== step.meta.dateAttr) {
+          nextParameters[paramIndex] = { ...nextParameters[paramIndex], defaultValue: step.meta.dateAttr };
+          changed = true;
+        }
+      }
+
       return step;
     }
 
@@ -197,11 +217,23 @@ const upgradeLegacyWorkflow = ({ steps, parameters }) => {
     changed = true;
   }
 
+  // Same non-adjacency URL sweep the live parameterizer now runs (see
+  // ruleBasedParameterizer.js) — this is what lets an ALREADY-stored
+  // workflow (recorded before this pass existed, or whose per-step adjacency
+  // window closed before reaching its navigation, e.g. two calendar-date
+  // picks followed by a few unrelated clicks/scrolls before "Search") get
+  // its checkin/checkout-shaped URLs linked retroactively, the next time
+  // getWorkflow() loads it — no re-recording required.
+  const urlLinked = linkAllUrlsToParameters(deduped.steps, deduped.parameters);
+  if (urlLinked.changed) {
+    changed = true;
+  }
+
   if (!changed) {
     return null;
   }
 
-  return { steps: deduped.steps, parameters: deduped.parameters };
+  return { steps: urlLinked.steps, parameters: deduped.parameters };
 };
 
 module.exports = { upgradeLegacyWorkflow };

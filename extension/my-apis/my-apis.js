@@ -138,51 +138,9 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- View/Run modal (parameters + Run API), ported from the popup ---
-
-    const collectParameterValues = (modal) => {
-        const values = {};
-        modal.querySelectorAll('[data-param-name]').forEach((input) => {
-            const name = input.dataset.paramName;
-            const type = input.dataset.paramType;
-            if (type === 'boolean') {
-                values[name] = input.checked;
-            } else if (type === 'number') {
-                values[name] = input.value === '' ? null : Number(input.value);
-            } else {
-                values[name] = input.value;
-            }
-        });
-        return values;
-    };
-
-    const buildParamFieldHtml = (param) => {
-        const inputId = `param-input-${param.name}`;
-        const safeName = escapeHtml(param.name);
-
-        if (param.type === 'boolean') {
-            const checked = param.defaultValue ? 'checked' : '';
-            return `
-                <div class="param-field">
-                    <label class="param-field-checkbox-row" for="${inputId}">
-                        <input type="checkbox" id="${inputId}" data-param-name="${safeName}" data-param-type="boolean" ${checked}>
-                        <span class="param-field-label">${escapeHtml(param.label)}</span>
-                    </label>
-                    ${param.description ? `<p class="param-field-description">${escapeHtml(param.description)}</p>` : ''}
-                </div>
-            `;
-        }
-
-        const inputType = param.type === 'number' ? 'number' : (param.type === 'date' ? 'date' : 'text');
-        const value = escapeHtml(String(param.defaultValue ?? ''));
-
-        return `
-            <div class="param-field">
-                <label class="param-field-label" for="${inputId}">${escapeHtml(param.label)}</label>
-                <input type="${inputType}" id="${inputId}" class="param-field-input" data-param-name="${safeName}" data-param-type="${param.type || 'text'}" value="${value}">
-                ${param.description ? `<p class="param-field-description">${escapeHtml(param.description)}</p>` : ''}
-            </div>
-        `;
-    };
+    // Form rendering/collection itself lives in shared/paramForm.js so every
+    // page with a Run button (this one, Marketplace, Purchased APIs) stays
+    // in sync — see that file for why it needs no per-API frontend code.
 
     const buildParamsUsedHtml = (parametersApplied) => {
         const entries = Object.entries(parametersApplied || {});
@@ -234,13 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const modal = document.createElement('div');
         modal.className = 'modal';
 
-        const paramsHtml = parameters.length
-            ? `
-                <h4>Parameters</h4>
-                <p class="param-field-hint">Pre-filled with the values captured while recording — edit any of them before running.</p>
-                ${parameters.map(buildParamFieldHtml).join('')}
-            `
-            : '';
+        const paramsHtml = window.ForgeFlowParamForm.buildFieldsHtml(parameters);
 
         modal.innerHTML = `
             <h3>${escapeHtml(api.name)}</h3>
@@ -275,7 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
             resultEl.innerHTML = '';
 
             try {
-                const body = collectParameterValues(modal);
+                const body = window.ForgeFlowParamForm.collectValues(modal);
                 const response = await fetch(`${API_BASE}${api.endpoint}`, {
                     method: api.method || 'POST',
                     headers: { 'Content-Type': 'application/json', ...authHeaders },

@@ -2,6 +2,24 @@ const marketplaceStore = require('../services/marketplaceStore');
 const marketplacePurchaseStore = require('../services/marketplacePurchaseStore');
 const purchaseRequestStore = require('../services/purchaseRequestStore');
 const myApisStore = require('../services/myApisStore');
+const { getWorkflow } = require('../services/workflowStore');
+
+// A marketplace_listings row never stores parameters itself — the live,
+// authoritative schema for ANY workflow (booking a hotel, sending an email,
+// posting to a feed, whatever) lives on its linked workflow, resolved
+// generically via myApiId -> workflowId -> getWorkflow (which also lazily
+// upgrades legacy step data — see workflowStore.js). This is what lets a
+// buyer's Run form (extension/purchased-apis/purchased-apis.js,
+// extension/marketplace/marketplace.js) stay in sync with whatever the
+// creator's workflow currently defines, without this controller ever
+// needing to know what a given API automates. Only called for listings the
+// caller actually owns or has purchased — see the "shared after purchase"
+// note in marketplace.js's pre-purchase details modal.
+const withRunnableParameters = (item) => {
+  const myApi = item.myApiId ? myApisStore.getById(item.myApiId) : null;
+  const workflow = myApi?.workflowId ? getWorkflow(myApi.workflowId) : null;
+  return { ...item, parameters: (workflow ? workflow.parameters : myApi?.parameters) || [] };
+};
 
 // optionalAuth (routes/marketplace.js) means req.user may or may not be set.
 // purchaseCount is public on every listing (same idea as a storefront
@@ -22,6 +40,7 @@ const listMarketplaceItems = (req, res) => {
   const purchasedIds = new Set(marketplacePurchaseStore.listPurchasedListingIds(req.user.id));
   const enriched = items.map((item) => {
     const isPurchasedByMe = purchasedIds.has(item.id);
+    const isOwnedByMe = item.ownerId === req.user.id;
     // Only surfaced when access isn't already granted — an old resolved
     // request should never mask a fresh Buy button once someone owns the
     // listing (see purchaseRequestStore.latestActiveForListingBuyer, which
@@ -29,12 +48,16 @@ const listMarketplaceItems = (req, res) => {
     const activeRequest = !isPurchasedByMe
       ? purchaseRequestStore.latestActiveForListingBuyer(item.id, req.user.id)
       : null;
-    return {
+    const base = {
       ...item,
-      isOwnedByMe: item.ownerId === req.user.id,
+      isOwnedByMe,
       isPurchasedByMe,
       myPurchaseRequestStatus: activeRequest ? activeRequest.status : null
     };
+    // Parameters are only attached once access is actually granted — a
+    // browsing (not-yet-purchased) listing must never leak the recorded
+    // field values/labels behind its paywall.
+    return (isOwnedByMe || isPurchasedByMe) ? withRunnableParameters(base) : base;
   });
 
   return res.json(enriched);
@@ -78,7 +101,7 @@ const listMyPurchases = (req, res) => {
     const items = purchases
       .map(({ listingId, purchasedAt }) => {
         const item = marketplaceStore.getById(listingId);
-        return item ? { ...item, purchasedAt } : null;
+        return item ? withRunnableParameters({ ...item, purchasedAt }) : null;
       })
       .filter(Boolean);
     return res.json(items);

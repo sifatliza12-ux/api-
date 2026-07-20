@@ -864,6 +864,134 @@ h1, h2, h3, h4 {
     padding: 10px 12px;
 }
 
+/* Runtime parameter form + run result (shared/paramForm.js, marketplace.js,
+   purchased-apis.js) — same rules extension/my-apis/my-apis.css already
+   defines for its own Run modal, duplicated here so this page renders the
+   identical form without a shared stylesheet. */
+.param-field-hint {
+    font-size: 12.5px;
+    color: var(--muted-2);
+    margin-bottom: 10px;
+}
+
+.param-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.param-field-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.param-field-description {
+    font-size: 12px;
+    color: var(--muted-2);
+}
+
+.param-field-input {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    width: 100%;
+}
+
+.param-field-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.param-field-checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.run-result {
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    word-break: break-word;
+    margin-top: 12px;
+    font-size: 13px;
+}
+
+.run-result--success {
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.run-result--error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.28);
+}
+
+.run-status {
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: var(--text);
+}
+
+.run-params-used {
+    font-size: 12.5px;
+    color: var(--muted-2);
+    margin-bottom: 8px;
+}
+
+.result-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.result-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+}
+
+.result-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12.5px;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.result-row:last-child {
+    border-bottom: none;
+}
+
+.result-row-label {
+    color: var(--muted-2);
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.result-row-value {
+    color: var(--text);
+    text-align: right;
+    word-break: break-word;
+}
+
+.run-empty-note {
+    font-size: 12.5px;
+    color: var(--muted-2);
+}
+
 @keyframes shimmer {
     0% { background-position: 100% 0; }
     100% { background-position: -100% 0; }

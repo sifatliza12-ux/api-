@@ -107,8 +107,18 @@ document.addEventListener('DOMContentLoaded', () => {
     let purchasedItems = [];
     let authHeaders = {};
 
+    const buildParamsUsedHtml = (parametersApplied) => {
+        const entries = Object.entries(parametersApplied || {});
+        if (!entries.length) return '';
+        const parts = entries.map(([key, value]) => (
+            `${escapeHtml(key)} = ${escapeHtml(value === null || value === undefined || value === '' ? '—' : String(value))}`
+        ));
+        return `<p class="run-params-used">Ran with: ${parts.join(', ')}</p>`;
+    };
+
     const buildRunResultHtml = (data) => {
         const statusLine = `<p class="run-status">✓ ${escapeHtml(data.message || 'Run succeeded.')}</p>`;
+        const paramsLine = buildParamsUsedHtml(data.parametersApplied);
         const items = Array.isArray(data.data) ? data.data : [];
         const resultsHtml = items.length
             ? `<div class="result-cards">${items.map((item) => {
@@ -121,9 +131,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 return `<div class="result-card">${rows}</div>`;
             }).join('')}</div>`
             : '<p class="run-empty-note">Workflow ran successfully, but no results were extracted from the final page.</p>';
-        return `${statusLine}${resultsHtml}`;
+        return `${statusLine}${paramsLine}${resultsHtml}`;
     };
 
+    // The parameter form itself is generic (see shared/paramForm.js) — this
+    // just wires it into a Run modal: whatever parameters this particular
+    // purchased API happens to have (destination/dates/guests, a recipient/
+    // subject/message, a post caption, a product/quantity, or anything else
+    // a future creator records) renders and submits the same way, with no
+    // per-API code here.
     const handleRunApi = async (item, btn) => {
         if (!item.endpoint) {
             alert('This API does not have a runnable endpoint yet.');
@@ -134,6 +150,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // open two modals / fire two concurrent runs.
         if (btn) btn.disabled = true;
 
+        const parameters = Array.isArray(item.parameters) ? item.parameters : [];
+        const paramsHtml = window.ForgeFlowParamForm.buildFieldsHtml(parameters);
+
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         const modal = document.createElement('div');
@@ -141,10 +160,11 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.innerHTML = `
             <h3>Run ${escapeHtml(item.name)}</h3>
             <div class="modal-scroll-body">
-                <p>Running with the workflow's recorded default values.</p>
+                ${paramsHtml || '<p>This API has no editable parameters — it runs with its recorded steps as-is.</p>'}
                 <div class="run-result" style="display:none"></div>
             </div>
             <div class="modal-actions">
+                <button class="btn btn-primary modal-run-api">Run API</button>
                 <button class="btn btn-secondary modal-close">Close</button>
             </div>
         `;
@@ -154,29 +174,40 @@ document.addEventListener('DOMContentLoaded', () => {
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
         if (btn) btn.disabled = false;
 
+        const runBtn = overlay.querySelector('.modal-run-api');
         const resultEl = overlay.querySelector('.run-result');
-        resultEl.style.display = 'block';
-        resultEl.textContent = 'Running…';
 
-        try {
-            const response = await fetch(`${API_BASE}${item.endpoint}`, {
-                method: item.method || 'POST',
-                headers: { 'Content-Type': 'application/json', ...authHeaders },
-                body: JSON.stringify({})
-            });
-            const data = await response.json().catch(() => ({}));
+        runBtn.addEventListener('click', async () => {
+            runBtn.disabled = true;
+            runBtn.textContent = 'Running…';
+            resultEl.style.display = 'block';
+            resultEl.className = 'run-result';
+            resultEl.textContent = 'Running…';
 
-            if (response.ok && data.success) {
-                resultEl.className = 'run-result run-result--success';
-                resultEl.innerHTML = buildRunResultHtml(data);
-            } else {
+            try {
+                const body = window.ForgeFlowParamForm.collectValues(modal);
+                const response = await fetch(`${API_BASE}${item.endpoint}`, {
+                    method: item.method || 'POST',
+                    headers: { 'Content-Type': 'application/json', ...authHeaders },
+                    body: JSON.stringify(body)
+                });
+                const data = await response.json().catch(() => ({}));
+
+                if (response.ok && data.success) {
+                    resultEl.className = 'run-result run-result--success';
+                    resultEl.innerHTML = buildRunResultHtml(data);
+                } else {
+                    resultEl.className = 'run-result run-result--error';
+                    resultEl.textContent = `✗ ${data.message || `Run failed (HTTP ${response.status}).`}`;
+                }
+            } catch (err) {
                 resultEl.className = 'run-result run-result--error';
-                resultEl.textContent = `✗ ${data.message || `Run failed (HTTP ${response.status}).`}`;
+                resultEl.textContent = '✗ Could not reach the ForgeFlow server. Please try again.';
+            } finally {
+                runBtn.disabled = false;
+                runBtn.textContent = 'Run API';
             }
-        } catch (err) {
-            resultEl.className = 'run-result run-result--error';
-            resultEl.textContent = '✗ Could not reach the ForgeFlow server. Please try again.';
-        }
+        });
     };
 
     // API Details — a modal, same pattern as My APIs' "View API" and the

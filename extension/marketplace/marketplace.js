@@ -318,8 +318,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Purchase dialog (manual-approval flow for paid items) ---
 
+    const BKASH_NUMBER = (window.FORGEFLOW_PAYMENT_CONFIG && window.FORGEFLOW_PAYMENT_CONFIG.bkash && window.FORGEFLOW_PAYMENT_CONFIG.bkash.number) || '';
+
     const PAYMENT_METHODS = [
-        { value: 'bkash', label: 'bKash', instructions: 'Send Money to 01700-000000 (Personal), then enter the Transaction ID shown in your bKash confirmation SMS.' },
+        { value: 'bkash', label: 'bKash', instructions: `Send Money to ${BKASH_NUMBER} (Personal), then enter the Transaction ID shown in your bKash confirmation SMS.` },
         { value: 'nagad', label: 'Nagad', instructions: 'Send Money to 01700-000000 (Personal), then enter the Transaction ID shown in your Nagad confirmation SMS.' },
         { value: 'rocket', label: 'Rocket', instructions: 'Send Money to 01700-000000-1 (Personal), then enter the Transaction ID shown in your Rocket confirmation SMS.' },
         { value: 'bank_transfer', label: 'Bank Transfer', instructions: 'Transfer to ForgeFlow Ltd., Account No. 0000-1111-2222, DBBL. Enter the transfer reference/transaction ID from your bank receipt.' }
@@ -471,8 +473,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
-    const buildRunResultHtml = (data) => {
+    const buildRunResultHtml = (data, options = {}) => {
         const statusLine = `<p class="run-status">✓ ${escapeHtml(data.message || 'Run succeeded.')}</p>`;
+        const paramsLine = options.paramsHtml || '';
         const items = Array.isArray(data.data) ? data.data : [];
         const resultsHtml = items.length
             ? `<div class="result-cards">${items.map((item) => {
@@ -485,9 +488,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 return `<div class="result-card">${rows}</div>`;
             }).join('')}</div>`
             : '<p class="run-empty-note">Workflow ran successfully, but no results were extracted from the final page.</p>';
-        return `${statusLine}${resultsHtml}`;
+        return `${statusLine}${paramsLine}${resultsHtml}`;
     };
 
+    const buildParamsUsedHtml = (parametersApplied) => {
+        const entries = Object.entries(parametersApplied || {});
+        if (!entries.length) return '';
+        const parts = entries.map(([key, value]) => (
+            `${escapeHtml(key)} = ${escapeHtml(value === null || value === undefined || value === '' ? '—' : String(value))}`
+        ));
+        return `<p class="run-params-used">Ran with: ${parts.join(', ')}</p>`;
+    };
+
+    // The parameter form itself is generic (see shared/paramForm.js) — this
+    // just wires it into a Run modal for an owned/purchased listing, whose
+    // `parameters` the backend only attaches once access is actually granted
+    // (see marketplaceController.withRunnableParameters). Works identically
+    // for any workflow's parameter set, with no per-API frontend code.
     const handleRunApi = async (item, btn) => {
         if (!isLoggedIn()) {
             requireLogin('Log in from the ForgeFlow extension popup to run purchased APIs.');
@@ -503,6 +520,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // modal is up and dismissible on its own.
         if (btn) btn.disabled = true;
 
+        const parameters = Array.isArray(item.parameters) ? item.parameters : [];
+        const paramsHtml = window.ForgeFlowParamForm.buildFieldsHtml(parameters);
+
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         const modal = document.createElement('div');
@@ -510,10 +530,11 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.innerHTML = `
             <h3>Run ${escapeHtml(item.name)}</h3>
             <div class="modal-scroll-body">
-                <p>Running with the workflow's recorded default values.</p>
+                ${paramsHtml || '<p>This API has no editable parameters — it runs with its recorded steps as-is.</p>'}
                 <div class="run-result" style="display:none"></div>
             </div>
             <div class="modal-actions">
+                <button class="btn btn-primary modal-run-api">Run API</button>
                 <button class="btn btn-secondary modal-close">Close</button>
             </div>
         `;
@@ -523,29 +544,40 @@ document.addEventListener('DOMContentLoaded', () => {
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
         if (btn) btn.disabled = false;
 
+        const runBtn = overlay.querySelector('.modal-run-api');
         const resultEl = overlay.querySelector('.run-result');
-        resultEl.style.display = 'block';
-        resultEl.textContent = 'Running…';
 
-        try {
-            const response = await fetch(`${API_BASE}${item.endpoint}`, {
-                method: item.method || 'POST',
-                headers: { 'Content-Type': 'application/json', ...authHeaders },
-                body: JSON.stringify({})
-            });
-            const data = await response.json().catch(() => ({}));
+        runBtn.addEventListener('click', async () => {
+            runBtn.disabled = true;
+            runBtn.textContent = 'Running…';
+            resultEl.style.display = 'block';
+            resultEl.className = 'run-result';
+            resultEl.textContent = 'Running…';
 
-            if (response.ok && data.success) {
-                resultEl.className = 'run-result run-result--success';
-                resultEl.innerHTML = buildRunResultHtml(data);
-            } else {
+            try {
+                const body = window.ForgeFlowParamForm.collectValues(modal);
+                const response = await fetch(`${API_BASE}${item.endpoint}`, {
+                    method: item.method || 'POST',
+                    headers: { 'Content-Type': 'application/json', ...authHeaders },
+                    body: JSON.stringify(body)
+                });
+                const data = await response.json().catch(() => ({}));
+
+                if (response.ok && data.success) {
+                    resultEl.className = 'run-result run-result--success';
+                    resultEl.innerHTML = buildRunResultHtml(data, { paramsHtml: buildParamsUsedHtml(data.parametersApplied) });
+                } else {
+                    resultEl.className = 'run-result run-result--error';
+                    resultEl.textContent = `✗ ${data.message || `Run failed (HTTP ${response.status}).`}`;
+                }
+            } catch (err) {
                 resultEl.className = 'run-result run-result--error';
-                resultEl.textContent = `✗ ${data.message || `Run failed (HTTP ${response.status}).`}`;
+                resultEl.textContent = '✗ Could not reach the ForgeFlow server. Please try again.';
+            } finally {
+                runBtn.disabled = false;
+                runBtn.textContent = 'Run API';
             }
-        } catch (err) {
-            resultEl.className = 'run-result run-result--error';
-            resultEl.textContent = '✗ Could not reach the ForgeFlow server. Please try again.';
-        }
+        });
     };
 
     const openAnalyticsView = (item) => {
