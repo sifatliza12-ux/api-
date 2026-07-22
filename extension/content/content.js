@@ -22,7 +22,10 @@
         lastKnownUrl: null,
         scrollThrottleTimer: null,
         pendingScrollTarget: null,
-        touchStartInfo: null
+        touchStartInfo: null,
+        // Events recorded while we don't yet (or don't currently) know for
+        // sure that recording is active — see recordEvent/syncWithServiceWorker.
+        pendingEvents: []
     });
 
     runtime.initialized = true;
@@ -762,7 +765,27 @@
         console.log('[Recorder][content] listeners removed');
     };
 
-    const sendEventToServiceWorker = (type, details = {}) => {
+    // MV3 service workers are ephemeral — one can be asleep or mid-restart
+    // when this fires, and chrome.runtime.sendMessage's response callback
+    // then resolves with chrome.runtime.lastError instead of an ack (the
+    // message port closed before the worker was ready to answer). A single
+    // attempt with no retry means that specific event is gone forever, with
+    // nothing site-specific about when it happens — it's a property of MV3
+    // messaging itself. A few quick, bounded retries covers the normal
+    // wake-up window without risking a stuck loop if the extension context
+    // is genuinely gone (e.g. reloaded mid-recording).
+    const SEND_EVENT_MAX_ATTEMPTS = 4;
+    const SEND_EVENT_RETRY_DELAY_MS = 150;
+
+    // How many sendEventToServiceWorker calls are currently outstanding
+    // (sent but not yet acked, including anything sitting in a retry
+    // backoff) — lets a 'recorder:drain' request (see below) know whether
+    // it's actually safe to finalize the event log yet, rather than a stop
+    // that happens to land between "the last click fired" and "its message
+    // actually reached the service worker" silently losing that event.
+    runtime.inFlightSends = 0;
+
+    const sendEventToServiceWorker = (type, details = {}, attempt = 1) => {
         const payload = {
             type,
             selector: details.selector || null,
@@ -773,22 +796,62 @@
             meta: details.meta || null
         };
 
+        if (attempt === 1) {
+            runtime.inFlightSends += 1;
+        }
+
         chrome.runtime.sendMessage({ type: 'recorder-event', event: payload }, () => {
             if (chrome.runtime.lastError) {
-                console.warn('[Recorder][content] failed to sync event', chrome.runtime.lastError.message);
+                if (attempt < SEND_EVENT_MAX_ATTEMPTS) {
+                    console.warn('[Recorder][content] failed to sync event, retrying', attempt, chrome.runtime.lastError.message);
+                    setTimeout(() => sendEventToServiceWorker(type, details, attempt + 1), SEND_EVENT_RETRY_DELAY_MS * attempt);
+                    return;
+                }
+                console.warn('[Recorder][content] failed to sync event, giving up after', attempt, 'attempts', chrome.runtime.lastError.message);
             }
+            runtime.inFlightSends = Math.max(0, runtime.inFlightSends - 1);
         });
     };
 
-    const recordEvent = (type, details = {}) => {
-        if (!runtime.isRecording) {
-            return;
-        }
-
+    // Actually ships an event to the service worker — split out from
+    // recordEvent so syncWithServiceWorker can replay buffered events
+    // through the exact same path once the recording state is known.
+    const sendRecordedEvent = (type, details) => {
         runtime.eventCount += 1;
         updateWidget();
         console.log('[Recorder][content] recorded', type, details);
         sendEventToServiceWorker(type, details);
+    };
+
+    // A page can learn "recording is active" at any of several points that
+    // are all, unavoidably, async round trips to the service worker: the
+    // recorder:ready reply on load, a later recorder:sync push (e.g. when
+    // this tab becomes the active one after recording already started
+    // elsewhere), or a direct start-recording message. A real DOM event (a
+    // real user, or a fast-driving script) can land before ANY of those
+    // resolve — and can keep landing before EACH of them if this tab was
+    // simply idle when the FIRST one resolved "not recording" and only
+    // becomes the recording target later. Trusting runtime.isRecording as
+    // the sole gate means such events are silently, permanently lost —
+    // confirmed in production against more than one real site, not a
+    // hypothetical. Buffering (bounded, so an ordinary page left open for a
+    // long time without ever recording doesn't grow this unboundedly)
+    // whenever we're NOT currently sure recording is active, and flushing it
+    // the moment syncWithServiceWorker learns otherwise, closes that gap
+    // regardless of which round trip eventually confirms it or how many
+    // false-then-true cycles happen first.
+    const MAX_PENDING_EVENTS = 100;
+
+    const recordEvent = (type, details = {}) => {
+        if (runtime.isRecording) {
+            sendRecordedEvent(type, details);
+            return;
+        }
+
+        runtime.pendingEvents.push({ type, details });
+        if (runtime.pendingEvents.length > MAX_PENDING_EVENTS) {
+            runtime.pendingEvents.shift();
+        }
     };
 
     // Records a navigation with both the URL it landed on and, where knowable,
@@ -905,6 +968,7 @@
 
         recordEvent('keydown', {
             selector: getSelector(target),
+            locators: getLocatorCandidates(target),
             value: isSensitiveField(target) ? REDACTED_VALUE : event.key
         });
     };
@@ -1081,14 +1145,61 @@
                 ? new Date(state.startedAt).getTime()
                 : (runtime.startTime || Date.now());
             startRecording();
+            // Flush whatever recordEvent buffered while isRecording was
+            // still false — deliberately NOT cleared on a "not recording"
+            // result anywhere else, specifically so it survives however many
+            // sync round trips report false before one finally reports true
+            // (see recordEvent's comment). Order is preserved: startRecording
+            // itself just emitted a synthetic 'navigation' event for the page
+            // load, which genuinely happened before anything buffered here.
+            if (runtime.pendingEvents.length) {
+                const buffered = runtime.pendingEvents;
+                runtime.pendingEvents = [];
+                buffered.forEach(({ type, details }) => sendRecordedEvent(type, details));
+            }
             return;
         }
 
         stopRecording();
     };
 
+    // Service-worker.js's STORAGE_KEY — duplicated here rather than shared
+    // (content scripts and the service worker load as separate bundles) so
+    // this can subscribe directly to chrome.storage.session.onChanged as a
+    // SECOND, independent path to learn the recording state changed, in
+    // addition to the request/response messaging in initialize()/
+    // onMessage below. This matters specifically because a message's
+    // response callback requires the service worker to be awake AND
+    // responsive right now — storage change events are delivered by the
+    // browser's storage layer itself and don't depend on the worker being
+    // able to answer a message at that exact moment (e.g. mid-restart).
+    // Whichever path resolves first wins; syncWithServiceWorker is
+    // idempotent (flushing an already-empty pendingEvents is a no-op), so
+    // there's no harm in both eventually firing for the same state change.
+    const RECORDER_STORAGE_KEY = 'forgeflow.recorder.state';
+
     const initialize = () => {
         console.log('[Recorder][content] loaded');
+        // Attached synchronously, BEFORE the async round trip below — this
+        // is what makes recordEvent's buffering actually work: listeners
+        // that only get attached once we've heard back "yes, recording" (as
+        // this used to do, via startRecording() alone) would still miss
+        // anything that happened before that point, buffer or no buffer.
+        // Safe to call unconditionally regardless of recording state — every
+        // handler funnels through recordEvent, which is itself the gate.
+        attachListeners();
+
+        if (chrome.storage?.onChanged) {
+            // The global listener (not the newer per-namespace
+            // chrome.storage.session.onChanged) for broader Chrome version
+            // compatibility — areaName filters it down to session storage.
+            chrome.storage.onChanged.addListener((changes, areaName) => {
+                if (areaName === 'session' && changes[RECORDER_STORAGE_KEY]) {
+                    syncWithServiceWorker(changes[RECORDER_STORAGE_KEY].newValue);
+                }
+            });
+        }
+
         chrome.runtime.sendMessage({ type: 'recorder:ready' }, (response) => {
             if (chrome.runtime.lastError) {
                 console.warn('[Recorder][content] unable to sync with service worker', chrome.runtime.lastError.message);
@@ -1119,6 +1230,31 @@
         if (request?.type === 'stop-recording') {
             stopRecording();
             sendResponse({ ok: true, isRecording: runtime.isRecording, eventCount: runtime.eventCount });
+            return true;
+        }
+
+        if (request?.type === 'recorder:drain') {
+            // Asked (by the service worker, right before it finalizes the
+            // event log for saving — see stopRecording there) whether every
+            // event this tab has tried to send has actually been
+            // acknowledged yet. Without this, a click/keypress that fires
+            // right before "stop recording" can lose its race against its
+            // own chrome.runtime.sendMessage round trip (or a retry backoff
+            // — see sendEventToServiceWorker) and silently never make it
+            // into the saved workflow, even though recordEvent/buffering
+            // upstream did everything right. Bounded so a genuinely stuck
+            // send (extension context gone) can't hang the stop forever.
+            const DRAIN_TIMEOUT_MS = 2000;
+            const DRAIN_POLL_MS = 50;
+            const deadline = Date.now() + DRAIN_TIMEOUT_MS;
+            const poll = () => {
+                if (runtime.inFlightSends <= 0 || Date.now() >= deadline) {
+                    sendResponse({ ok: true, drained: runtime.inFlightSends <= 0 });
+                    return;
+                }
+                setTimeout(poll, DRAIN_POLL_MS);
+            };
+            poll();
             return true;
         }
 

@@ -215,31 +215,56 @@ const startRecording = (tabId) => enqueueStateOp(async () => {
     return { ok: true, state: nextState };
 });
 
-const stopRecording = ({ tabId, save, name, description } = {}) => enqueueStateOp(async () => {
+const stopRecording = async ({ tabId, save, name, description } = {}) => {
     const activeTab = await getActiveTab();
     const targetTabId = tabId || activeTab?.id || null;
-    const currentState = await getSnapshot();
-    const nextState = await saveState({
-        ...currentState,
-        isRecording: false,
-        activeTabId: targetTabId,
-        activeTabUrl: activeTab?.url || currentState.activeTabUrl,
-        pageTitle: activeTab?.title || currentState.pageTitle,
-        stoppedAt: new Date().toISOString()
+
+    // Deliberately OUTSIDE enqueueStateOp: the recorder-event handler below
+    // also goes through that same queue, so waiting on the drain from
+    // inside it would deadlock — this tab's own outstanding sends could
+    // never get their turn to be processed (and so never decrement
+    // inFlightSends and let the drain resolve) while stopRecording was
+    // sitting in front of them in the queue. Reading state out here first
+    // to find the ACTUAL recording tab is also more reliable than "whichever
+    // tab happens to be focused right now" — stop-recording is typically
+    // triggered from the popup, which is itself the focused tab at that
+    // moment, not the site being recorded.
+    const preDrainState = await getSnapshot();
+    const recordingTabId = preDrainState.activeTabId || targetTabId;
+    if (recordingTabId) {
+        // Give the recording tab a chance to confirm every event it tried
+        // to send has actually landed before the queued op below reads the
+        // "final" event log — otherwise a click/keypress fired right before
+        // stop can lose its race against its own message round trip (or a
+        // retry backoff) and silently vanish from the saved workflow. See
+        // content.js's 'recorder:drain' handler for the other half of this.
+        await sendToTab(recordingTabId, { type: 'recorder:drain' });
+    }
+
+    return enqueueStateOp(async () => {
+        const currentState = await getSnapshot();
+        const nextState = await saveState({
+            ...currentState,
+            isRecording: false,
+            activeTabId: targetTabId,
+            activeTabUrl: activeTab?.url || currentState.activeTabUrl,
+            pageTitle: activeTab?.title || currentState.pageTitle,
+            stoppedAt: new Date().toISOString()
+        });
+
+        if (targetTabId) {
+            await syncTab(targetTabId, nextState);
+        }
+
+        const result = { ok: true, state: nextState };
+
+        if (save) {
+            result.save = await saveWorkflowToBackend({ name, description, events: nextState.events });
+        }
+
+        return result;
     });
-
-    if (targetTabId) {
-        await syncTab(targetTabId, nextState);
-    }
-
-    const result = { ok: true, state: nextState };
-
-    if (save) {
-        result.save = await saveWorkflowToBackend({ name, description, events: nextState.events });
-    }
-
-    return result;
-});
+};
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[Recorder][service-worker] received', request);
@@ -286,6 +311,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                         timestamp: new Date().toISOString(),
                         type: request.event?.type || 'unknown',
                         selector: request.event?.selector || null,
+                        // Fallback locator candidates (label/role/css/etc) content.js
+                        // captures alongside selector — dropping these here silently
+                        // strips every recorded step down to its single, most fragile
+                        // selector before the backend ever sees it, discarding the
+                        // whole point of recording more than one way to relocate an
+                        // element.
+                        locators: Array.isArray(request.event?.locators) ? request.event.locators : null,
                         url: request.event?.url || sender.url || currentState.activeTabUrl,
                         pageTitle: request.event?.pageTitle || currentState.pageTitle,
                         value: request.event?.value ?? null,

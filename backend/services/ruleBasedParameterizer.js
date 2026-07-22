@@ -793,6 +793,22 @@ const parameterizeWorkflowRuleBased = (events) => {
       return linkedUrl ? { ...event, [urlField]: linkedUrl } : { ...event };
     }
 
+    if (event.type === 'keydown') {
+      // The only keydown event.condenseEvents keeps is Enter, and it
+      // overwhelmingly means "submit the field I just typed into" — the
+      // same "this is what the live value produced" signal a click
+      // carries, so a navigation right after it should still get to link
+      // its URL to the live parameter (see the navigation branch above).
+      // Only preserved when it fired on the SAME field currently pending
+      // (an Enter pressed somewhere else entirely isn't that signal).
+      if (event.selector !== pendingInputSelector) {
+        pendingInputParamName = null;
+        pendingInputValue = null;
+      }
+      pendingInputSelector = null;
+      return { ...event };
+    }
+
     // Any other event type (scroll, touch, ...) closes the "about to pick a
     // suggestion" window just as much as a click does. A real suggestion
     // selection happens in the SAME interaction burst as the typing —

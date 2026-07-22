@@ -175,6 +175,19 @@ const upgradeLegacyWorkflow = ({ steps, parameters }) => {
       return workingStep;
     }
 
+    if (workingStep.type === 'keydown') {
+      // Enter submitting the field just typed into carries the same
+      // live-value signal a click does — see the matching branch in
+      // ruleBasedParameterizer.js. Preserved only when it fired on the
+      // field currently pending.
+      if (workingStep.selector !== pendingInputSelector) {
+        pendingInputParamName = null;
+        pendingInputValue = null;
+      }
+      pendingInputSelector = null;
+      return workingStep;
+    }
+
     if (workingStep.type !== 'click' && workingStep.type !== 'dblclick') {
       // Any other step type (scroll, touch, ...) closes the adjacency
       // window just like a click would — see the matching comment in

@@ -478,8 +478,15 @@ const buildRelaxedCandidates = (step) => {
     relaxed.push({ strategy: 'css', value: relaxedSelector });
   }
 
+  // Text/role relaxed candidates only make sense when step.value IS the
+  // target element's own visible text (true for click/dblclick, where it
+  // was captured from the clicked element itself). A keydown step's value
+  // is the KEY that was pressed ("Enter"), never text on the page — using
+  // it as a text search would risk matching some unrelated element that
+  // merely contains the word "Enter" (e.g. an "Enter your email" label).
+  const valueIsElementText = step.type === 'click' || step.type === 'dblclick';
   const isPlaceholder = typeof step.value === 'string' && PLACEHOLDER_PATTERN.test(step.value);
-  const recordedText = (!isPlaceholder && typeof step.value === 'string') ? step.value.trim() : '';
+  const recordedText = (valueIsElementText && !isPlaceholder && typeof step.value === 'string') ? step.value.trim() : '';
 
   if (recordedText && recordedText.length <= 200) {
     const shortText = firstFewWords(recordedText, 4);
@@ -2252,6 +2259,21 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
           case 'change': {
             const value = substitutePlaceholders(step.value, values);
             await performWithRetry(page, step, log, timeoutMs, (locator) => fillField(locator, value), values, { allowJsClickFallback: false });
+            break;
+          }
+
+          case 'keydown': {
+            // The only keydown that survives eventCondenser's filtering is
+            // Enter — on many real sites (search boxes, login forms) that's
+            // how the user actually submitted, with no separate click and,
+            // for a client-side/SPA route change, often no captured
+            // navigation step either. Replaying the literal keypress (not
+            // guessing a URL) is what makes that submission happen again;
+            // skipping it silently strands every later step on the
+            // pre-submit page. waitForPageStability mirrors the click case
+            // since Enter just as commonly triggers a navigation.
+            await performWithRetry(page, step, log, timeoutMs, (locator) => locator.press('Enter', { timeout: 3000 }), values, { allowJsClickFallback: false });
+            await waitForPageStability(page, 3000);
             break;
           }
 
