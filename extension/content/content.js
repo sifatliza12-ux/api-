@@ -143,6 +143,26 @@
         return parts.length ? `/${parts.join('/')}` : null;
     };
 
+    // Implicit ARIA role for every standard <input> type — used by
+    // getLocatorCandidates below to give checkboxes/radios/text-like inputs
+    // (not just <button>) a real, generic role-based locator candidate.
+    const INPUT_TYPE_TO_ROLE = {
+        checkbox: 'checkbox',
+        radio: 'radio',
+        range: 'slider',
+        number: 'spinbutton',
+        search: 'searchbox',
+        email: 'textbox',
+        tel: 'textbox',
+        url: 'textbox',
+        text: 'textbox',
+        password: 'textbox',
+        button: 'button',
+        submit: 'button',
+        reset: 'button',
+        image: 'button'
+    };
+
     // Captures an ORDERED list of ways to re-find this element on replay,
     // preferring semantic/accessible attributes (the same ones Playwright's
     // own getByRole/getByLabel/getByPlaceholder recommend for resilient
@@ -191,11 +211,9 @@
             candidates.push({ strategy: 'css', value: `${tag}[name="${CSS.escape(name)}"]` });
         }
 
-        if (element.labels && element.labels.length) {
-            const labelText = getVisibleText(element.labels[0]);
-            if (labelText && labelText.length <= 100) {
-                candidates.push({ strategy: 'label', value: labelText });
-            }
+        const labelText = (element.labels && element.labels.length) ? getVisibleText(element.labels[0]) : null;
+        if (labelText && labelText.length <= 100) {
+            candidates.push({ strategy: 'label', value: labelText });
         }
 
         const ariaLabel = element.getAttribute('aria-label');
@@ -209,12 +227,45 @@
         }
 
         // Accessible role + name — what a screen reader (and Playwright's
-        // getByRole) would use, independent of markup/class structure.
+        // getByRole) would use, independent of markup/class structure. Covers
+        // every standard native control (not just links/buttons): checkboxes,
+        // radios, and plain text-like inputs/textareas/selects all have a
+        // well-defined implicit ARIA role, and omitting them here just because
+        // they're not <button>/<a> left an entire category of elements (any
+        // checkbox/radio/text field with no id/name/aria-label of its own,
+        // e.g. one identified only by an associated <label>) without this
+        // strategy at all.
         const implicitRole = element.getAttribute('role')
-            || (tag === 'a' && element.hasAttribute('href') ? 'link' : null)
+            || (tag === 'a' || tag === 'area' ? (element.hasAttribute('href') ? 'link' : null) : null)
             || (tag === 'button' ? 'button' : null)
-            || (tag === 'input' && ['button', 'submit', 'reset'].includes(element.type) ? 'button' : null);
-        const accessibleName = (getVisibleText(element) || element.getAttribute('aria-label') || element.getAttribute('value') || '').slice(0, 80);
+            || (tag === 'textarea' ? 'textbox' : null)
+            || (tag === 'select' ? ((element.multiple || Number(element.size) > 1) ? 'listbox' : 'combobox') : null)
+            || (tag === 'input' ? (INPUT_TYPE_TO_ROLE[element.type] || null) : null);
+        // Name computed with the same priority a screen reader would use:
+        // an explicit aria-label/aria-labelledby always wins, then a real
+        // associated <label> (the ONLY signal available for a great many
+        // checkboxes/radios, which rarely have visible text of their own),
+        // then the element's own visible text/value as a last resort.
+        const accessibleName = (
+            ariaLabel
+            || getAriaLabelledByText(element)
+            || labelText
+            || getVisibleText(element)
+            || element.getAttribute('value')
+            || ''
+        ).slice(0, 80);
+        // A NAMED role candidate is only pushed here, in the high-priority
+        // section — it pins down both "what kind of control" and "which
+        // one," as specific as a real id/name attribute would be. A role
+        // with NO name (implicitRole present but accessibleName empty) is
+        // NOT pushed here: unqualified, it only says "some checkbox" /
+        // "some textbox," which on most real pages matches more than the
+        // one element recorded (e.g. a page-wide "select all" checkbox
+        // sharing role=checkbox with every row's own checkbox) — trying it
+        // this early would let it win the race against a real, more
+        // specific css/class candidate further down purely by being tried
+        // first. It's still captured, just demoted to the structural
+        // fallback section below, alongside xpath.
         if (implicitRole && accessibleName) {
             candidates.push({ strategy: 'role', role: implicitRole, name: accessibleName });
         }
@@ -239,6 +290,15 @@
             if (stableClasses.length) {
                 candidates.push({ strategy: 'css', value: `${tag}.${stableClasses.slice(0, 3).map((c) => CSS.escape(c)).join('.')}` });
             }
+        }
+
+        // Demoted, unqualified role fallback (see the named-role comment
+        // above) — a real signal ("this is at least a checkbox/textbox/...")
+        // that's still worth having in the chain, just tried only after
+        // every more specific candidate (including the plain class selector
+        // right above) has already had its shot.
+        if (implicitRole && !accessibleName) {
+            candidates.push({ strategy: 'role', role: implicitRole });
         }
 
         // Absolute last resort: a structural XPath (tag + position among

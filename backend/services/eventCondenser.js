@@ -57,6 +57,20 @@ const condenseEvents = (events) => {
 
     if (event.type === 'input' && event.selector) {
       lastInputIndexBySelector.set(event.selector, index);
+    } else if (event.selector && (event.type === 'change' || isKeptKeydown(event))) {
+      // A 'change' (fires on blur/commit) or a submitting Enter both mean
+      // this field's CURRENT edit just got committed — a great many real
+      // pages reuse the exact same field for multiple independent
+      // fill-then-submit cycles on one field (add a todo, then add
+      // another; search, then search again), and each cycle re-emits
+      // 'input' events against that same selector. Without this, a later
+      // cycle's 'input' would still find this selector in the map and
+      // silently overwrite THIS cycle's already-committed condensed slot
+      // instead of starting its own — collapsing two distinct recorded
+      // values (and reordering the surviving one to wherever the FIRST
+      // cycle happened to sit) into one, and quietly discarding a whole
+      // step of what was actually recorded.
+      lastInputIndexBySelector.delete(event.selector);
     }
   });
 

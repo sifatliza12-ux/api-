@@ -1327,6 +1327,50 @@ const isAlreadyAtNavigationTarget = (currentUrl, urlTemplate, parameterValues) =
   });
 };
 
+// How long to give a client-side ROUTE CHANGE (React Router, Vue Router,
+// Angular Router, or hand-rolled history.pushState — any of them, on any
+// site) a chance to actually land before concluding it never will. This is
+// the fix for a race that's generic to EVERY single-page app, not any one
+// site: waitForPageStability only knows how to wait for a 'load'/
+// 'domcontentloaded' event or the network going idle, but a client-side
+// route change triggered by an ASYNC operation (a fetch that validates
+// credentials, a Redux/Vuex thunk, a plain setTimeout-driven transition)
+// fires neither — often with no network activity at all for
+// waitForPageStability to observe. The URL itself is the only signal left
+// that the transition actually completed, so it has to be POLLED for a
+// bounded stretch instead of checked exactly once: a single immediate
+// check (the previous behavior) loses this race as soon as the app takes
+// even one extra tick to call its router, and the resulting forced
+// page.goto() straight to the recorded URL is actively wrong for any route
+// that's gated on in-memory client state rather than a persisted
+// cookie/session — that goto reaches the server with none of that state,
+// so the app has every right to bounce it back to wherever an
+// unauthenticated/unrouted request actually belongs.
+const NAVIGATION_TARGET_POLL_TIMEOUT_MS = 6000;
+const NAVIGATION_TARGET_POLL_INTERVAL_MS = 200;
+
+const waitForNavigationTarget = async (page, urlTemplate, parameterValues, timeoutMs = NAVIGATION_TARGET_POLL_TIMEOUT_MS) => {
+  // A blank/never-navigated page (only ever true for the very first step of
+  // a run) can never already be "at" any real destination — no prior action
+  // could have started a client-side route change on it, so there is
+  // nothing worth waiting on and every extra poll here would just be a pure
+  // timeout tax on the most common step in every single replay.
+  if (!page.url() || page.url() === 'about:blank') {
+    return false;
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (isAlreadyAtNavigationTarget(page.url(), urlTemplate, parameterValues)) {
+      return true;
+    }
+    if (Date.now() >= deadline) {
+      return false;
+    }
+    await page.waitForTimeout(NAVIGATION_TARGET_POLL_INTERVAL_MS);
+  }
+};
+
 // page.goto() throwing does NOT necessarily mean navigation didn't happen.
 // ERR_ABORTED in particular is extremely common on real, dynamic sites: the
 // initial navigation gets interrupted by a client-side redirect, a second
@@ -2193,7 +2237,7 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
               log.blockersDismissed.push(dismissedBeforeCheck);
             }
 
-            if (isAlreadyAtNavigationTarget(page.url(), step.value, values)) {
+            if (await waitForNavigationTarget(page, step.value, values)) {
               log.strategyUsed = 'navigation-already-occurred';
               log.actionExecuted = true;
               tracker.remember(page);
