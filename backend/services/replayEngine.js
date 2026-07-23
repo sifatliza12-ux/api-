@@ -232,6 +232,20 @@ const findCoveringCloseControlInPage = ({ cx, cy, marker, exactSource, substring
   return false;
 };
 
+// page.evaluate() (unlike locator.evaluate()) accepts no timeout option at
+// all — it waits for the CDP round-trip to return, however long that takes,
+// with no bound. Wrapping it in a race against a timer is the only way to
+// give it the same "never blow through the step's own timeoutMs budget"
+// guarantee the sibling boundingBox({timeout:2000}) call just above it
+// already has (see that call's own comment for the prior incident this
+// pattern fixes — a real, observed 60+ second CDP stall). Rejects rather
+// than resolving null on timeout so the caller's existing catch/return-null
+// handles both outcomes identically.
+const evaluateWithTimeout = (page, pageFunction, arg, timeoutMs) => Promise.race([
+  page.evaluate(pageFunction, arg),
+  new Promise((_, reject) => setTimeout(() => reject(new Error('page.evaluate timed out')), timeoutMs))
+]);
+
 const findCoveringCloseControl = async (page, blockedLocator) => {
   try {
     // Playwright's own default for boundingBox()'s timeout is 0 — literally
@@ -245,13 +259,13 @@ const findCoveringCloseControl = async (page, blockedLocator) => {
     // overall retry deadline) can't see or bound.
     const box = await blockedLocator.boundingBox({ timeout: 2000 });
     if (!box) return null;
-    const found = await page.evaluate(findCoveringCloseControlInPage, {
+    const found = await evaluateWithTimeout(page, findCoveringCloseControlInPage, {
       cx: box.x + box.width / 2,
       cy: box.y + box.height / 2,
       marker: OVERLAY_CLOSE_MARKER_ATTR,
       exactSource: OVERLAY_CLOSE_EXACT_SOURCE,
       substringSource: OVERLAY_CLOSE_SUBSTRING_SOURCE
-    });
+    }, 2000);
     return found ? page.locator(`[${OVERLAY_CLOSE_MARKER_ATTR}]`).first() : null;
   } catch (error) {
     return null;
