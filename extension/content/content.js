@@ -934,8 +934,101 @@
         recordNavigation('back-forward');
     };
 
+    // Native elements that ARE the interaction, never a decorative surface
+    // sitting on top of one — clicking/typing into one of these is never
+    // ambiguous about what the target is.
+    const NATIVE_INTERACTIVE_TAGS = new Set(['a', 'button', 'input', 'select', 'textarea', 'option', 'label']);
+
+    // ARIA roles a screen reader (and Playwright's getByRole) treats as
+    // something a user operates, not one that merely describes what an
+    // element IS (e.g. "img", "presentation", "listbox" itself — the
+    // individual "option" is interactive, the list container isn't).
+    const INTERACTIVE_ARIA_ROLES = new Set([
+        'button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem',
+        'menuitemcheckbox', 'menuitemradio', 'option', 'combobox', 'slider',
+        'spinbutton', 'searchbox', 'textbox'
+    ]);
+
+    const isInteractiveElement = (el) => {
+        if (!(el instanceof Element)) {
+            return false;
+        }
+        if (NATIVE_INTERACTIVE_TAGS.has(el.tagName.toLowerCase())) {
+            return true;
+        }
+        const role = el.getAttribute('role');
+        if (role && INTERACTIVE_ARIA_ROLES.has(role.toLowerCase())) {
+            return true;
+        }
+        if (el.hasAttribute('onclick') || typeof el.onclick === 'function') {
+            return true;
+        }
+        if (el.isContentEditable) {
+            return true;
+        }
+        const tabindex = el.getAttribute('tabindex');
+        if (tabindex !== null && Number(tabindex) >= 0) {
+            return true;
+        }
+        return false;
+    };
+
+    // Resolves the element an interaction should actually be RECORDED
+    // against — which is not necessarily event.target. event.target is only
+    // "whichever element happens to be the topmost node at the exact pixel
+    // the pointer landed on" — a purely visual/hit-testing fact, not a
+    // semantic one. A decorative child (an icon, a ripple/overlay effect, a
+    // hover-triggered preview layer) can easily BE that topmost node while a
+    // real, stable, always-present interactive ancestor (the <a>/<button>/
+    // [role=...] that actually owns the navigation/click handling) sits
+    // right above it in the DOM. Recording the decorative child produces a
+    // selector/locator set that's only ever present or actionable under the
+    // exact transient visual conditions the recording happened to catch it
+    // in — confirmed in production: a recorded click on a YouTube search
+    // result resolved to an inline hover-preview <video> element that
+    // doesn't even exist in the DOM until the thumbnail is hovered, instead
+    // of the stable <a> that actually opens the video, making the recorded
+    // step permanently unreplayable (see the "element found, but not
+    // visible" / zero-size-match failure this generalizes past).
+    //
+    // event.composedPath() (not .closest()/.parentElement) is used
+    // specifically because it pierces shadow-DOM boundaries, which
+    // .closest()/.parentElement cannot cross — needed for any site built
+    // with web components. Deliberately generic: no tag/class/site names
+    // anywhere in this function, only standard interactivity signals (see
+    // isInteractiveElement above). If event.target is already interactive,
+    // or no better ancestor is found, the original target is kept as-is —
+    // this only ever narrows to a MORE stable element, never picks a less
+    // specific one.
+    const getStableEventTarget = (event) => {
+        const originalTarget = event.target;
+        if (!(originalTarget instanceof Element) || isInteractiveElement(originalTarget)) {
+            return originalTarget;
+        }
+
+        const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+        for (const node of path) {
+            if (node === originalTarget || !(node instanceof Element)) {
+                continue;
+            }
+            // <body>/<html> are where the walk ran out of anything more
+            // specific to try, not a meaningful "interactive element" —
+            // an app-wide onclick/tabindex on either is a far less useful
+            // recording target than the original (already more specific)
+            // event.target, so this stops before ever considering them.
+            if (node === document.body || node === document.documentElement) {
+                break;
+            }
+            if (isInteractiveElement(node)) {
+                return node;
+            }
+        }
+
+        return originalTarget;
+    };
+
     const handleClick = (event) => {
-        const target = event.target;
+        const target = getStableEventTarget(event);
         if (!(target instanceof Element)) {
             return;
         }
@@ -953,7 +1046,7 @@
     };
 
     const handleDoubleClick = (event) => {
-        const target = event.target;
+        const target = getStableEventTarget(event);
         if (!(target instanceof Element)) {
             return;
         }
@@ -971,7 +1064,12 @@
     };
 
     const handleInput = (event) => {
-        const target = event.target;
+        // 'input' only ever fires on an already-inherently-interactive
+        // element (a real form control, or something contenteditable) —
+        // getStableEventTarget will always return it unchanged. Routed
+        // through it anyway so every handler resolves its recording target
+        // the same way, with no special-cased exceptions to remember.
+        const target = getStableEventTarget(event);
         if (!(target instanceof Element)) {
             return;
         }
@@ -994,7 +1092,9 @@
     };
 
     const handleChange = (event) => {
-        const target = event.target;
+        // Same reasoning as handleInput above — 'change' only ever fires on
+        // an already-interactive form control.
+        const target = getStableEventTarget(event);
         if (!(target instanceof Element)) {
             return;
         }
@@ -1017,7 +1117,7 @@
     };
 
     const handleKeyDown = (event) => {
-        const target = event.target;
+        const target = getStableEventTarget(event);
         if (!(target instanceof Element) || !event.key) {
             return;
         }
@@ -1034,7 +1134,7 @@
     };
 
     const handleKeyUp = (event) => {
-        const target = event.target;
+        const target = getStableEventTarget(event);
         if (!(target instanceof Element) || !event.key) {
             return;
         }
@@ -1074,7 +1174,13 @@
     };
 
     // Scroll fires far too often to log every pixel, so we throttle to at
-    // most one recorded scroll event per 250ms per target.
+    // most one recorded scroll event per 250ms per target. Deliberately NOT
+    // routed through getStableEventTarget: scroll's target identifies WHICH
+    // element scrolled (a structural/positional fact used to pick the right
+    // scroll container on replay), not "what would a user click here" — the
+    // element that actually scrolled is very often a plain, non-interactive
+    // overflow container, so walking to an "interactive ancestor" would
+    // replace the correct target with an unrelated one.
     const handleScroll = (event) => {
         const target = event.target === document ? document.documentElement : event.target;
         runtime.pendingScrollTarget = target;
@@ -1097,7 +1203,7 @@
         runtime.touchStartInfo = {
             x: touch.clientX,
             y: touch.clientY,
-            target: event.target
+            target: getStableEventTarget(event)
         };
     };
 
