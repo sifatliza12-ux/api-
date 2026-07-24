@@ -1,0 +1,17 @@
+{
+  "site": "booking-com-destination-search",
+  "workflowId": "57",
+  "recordedStepCount": 16,
+  "replayedStepCount": 16,
+  "failedStepCount": 0,
+  "finalUrl": "https://www.booking.com/city/bd/dhaka.html",
+  "totalDurationMs": 26532,
+  "wallClockMs": 27302,
+  "httpStatus": 200,
+  "uiOutcome": "ui-success",
+  "engineSuccess": true,
+  "engineMessage": "Workflow completed successfully.",
+  "resultText": "✓ Workflow completed successfully. in 26.5s\n\nRan with: enterDestination = Paris\n\nField 1\nwindow.utag_data = { site: 'bookings2', stypeid: '1', action: 'city', crt: '1', fbp: '1', exp1: '', exp2: '0', bem: '0', bip: '0', exp_rmkt_test: 'global_on', exp_google_tag_manager: '1', ns: '1', nsc: '0', fame",
+  "failedSteps": [],
+  "overallElapsedMs": 61386
+}

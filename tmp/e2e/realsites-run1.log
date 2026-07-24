@@ -1,0 +1,57 @@
+Replay engine REAL-SITE E2E verification harness
+
+(isolated test DB: C:\Users\DELL\AppData\Local\Temp\forgeflow-realsites-test-1784586552764)
+
+============ RECORDING: wikipedia-search ============
+Recorded 7 events: navigation, click, input, change, keydown, click, keyup
+
+============ PARAMETERIZING: wikipedia-search ============
+[Backend][pipeline] step 3: parameterizer received { eventCount: 7 }
+[Backend][pipeline] step 2: event condenser received { rawEventCount: 7 }
+[Backend][pipeline] step 2: event condenser output { condensedEventCount: 5 }
+[Backend][pipeline] step 4: workflow template created { stepCount: 5, parameterCount: 1 }
+Parameters: searchWikipedia="Alan Turing"
+Steps: [0] navigation, [1] click, [2] input, [3] change, [4] dynamic_click
+
+============ SAVING TO DB: wikipedia-search ============
+
+✗ wikipedia-search — FAILED: NOT NULL constraint failed: workflows.owner_id
+
+============ RECORDING: saucedemo-login-cart-sort ============
+Recorded 10 events: navigation, input, change, input, change, click, navigation, click, input, change
+
+============ PARAMETERIZING: saucedemo-login-cart-sort ============
+[Backend][pipeline] step 3: parameterizer received { eventCount: 10 }
+[Backend][pipeline] step 2: event condenser received { rawEventCount: 10 }
+[Backend][pipeline] step 2: event condenser output { condensedEventCount: 10 }
+[Backend][pipeline] step 4: workflow template created { stepCount: 10, parameterCount: 3 }
+Parameters: username="standard_user", password="[REDACTED]", nameAToZ="lohi"
+Steps: [0] navigation, [1] input, [2] change, [3] input, [4] change, [5] click, [6] navigation, [7] click, [8] input, [9] change
+
+============ SAVING TO DB: saucedemo-login-cart-sort ============
+
+✗ saucedemo-login-cart-sort — FAILED: NOT NULL constraint failed: workflows.owner_id
+
+============ RECORDING: the-internet-dynamic-loading ============
+Recorded 3 events: navigation, click, click
+
+============ PARAMETERIZING: the-internet-dynamic-loading ============
+[Backend][pipeline] step 3: parameterizer received { eventCount: 3 }
+[Backend][pipeline] step 2: event condenser received { rawEventCount: 3 }
+[Backend][pipeline] step 2: event condenser output { condensedEventCount: 3 }
+[Backend][pipeline] step 4: workflow template created { stepCount: 3, parameterCount: 0 }
+Parameters: (none)
+Steps: [0] navigation, [1] click, [2] click
+
+============ SAVING TO DB: the-internet-dynamic-loading ============
+
+✗ the-internet-dynamic-loading — FAILED: NOT NULL constraint failed: workflows.owner_id
+
+============ FULL REPORT ============
+✗ wikipedia-search — NOT NULL constraint failed: workflows.owner_id
+✗ saucedemo-login-cart-sort — NOT NULL constraint failed: workflows.owner_id
+✗ the-internet-dynamic-loading — NOT NULL constraint failed: workflows.owner_id
+
+0/3 sites fully passed (record -> save -> load -> replay -> verify)
+Full JSON report: C:\Users\DELL\OneDrive\Desktop\vibe coding 1st\backend\debug\realsites-report-1784586570729.json
+Per-step screenshots/diagnostics: C:\Users\DELL\OneDrive\Desktop\vibe coding 1st\backend\debug

@@ -1,0 +1,238 @@
+[
+  {
+    "locators": null,
+    "meta": {
+      "fromUrl": null,
+      "method": "full-navigation"
+    },
+    "pageTitle": "YouTube",
+    "selector": null,
+    "timestamp": "2026-07-24T18:01:06.743Z",
+    "type": "navigation",
+    "url": "https://www.youtube.com/",
+    "value": "https://www.youtube.com/"
+  },
+  {
+    "locators": [
+      {
+        "strategy": "css",
+        "value": "input[name=\"search_query\"]"
+      },
+      {
+        "strategy": "css",
+        "value": "input[placeholder=\"Search\"]"
+      },
+      {
+        "strategy": "css",
+        "value": "input.ytSearchboxComponentInput.yt-searchbox-input.title"
+      },
+      {
+        "role": "combobox",
+        "strategy": "role"
+      },
+      {
+        "strategy": "xpath",
+        "value": "//*[@id=\"center\"]/yt-searchbox[1]/div[1]/div[1]/div[1]/form[1]/input[1]"
+      }
+    ],
+    "meta": {
+      "dateAttr": null,
+      "inCalendarContext": false,
+      "inListboxContext": true,
+      "role": "combobox",
+      "tag": "input",
+      "x": 588,
+      "y": 28
+    },
+    "pageTitle": "YouTube",
+    "selector": "input[name=\"search_query\"]",
+    "timestamp": "2026-07-24T18:01:08.331Z",
+    "type": "click",
+    "url": "https://www.youtube.com/",
+    "value": ""
+  },
+  {
+    "locators": [
+      {
+        "strategy": "css",
+        "value": "input[name=\"search_query\"]"
+      },
+      {
+        "strategy": "css",
+        "value": "input[placeholder=\"Search\"]"
+      },
+      {
+        "strategy": "css",
+        "value": "input.ytSearchboxComponentInput.yt-searchbox-input.title"
+      },
+      {
+        "role": "combobox",
+        "strategy": "role"
+      },
+      {
+        "strategy": "xpath",
+        "value": "//*[@id=\"center\"]/yt-searchbox[1]/div[1]/div[1]/div[1]/form[1]/input[1]"
+      }
+    ],
+    "meta": {
+      "fieldContext": {
+        "ariaLabel": null,
+        "label": null,
+        "name": "search_query",
+        "nearbyText": null,
+        "placeholder": "Search"
+      }
+    },
+    "pageTitle": "YouTube",
+    "selector": "input[name=\"search_query\"]",
+    "timestamp": "2026-07-24T18:01:08.362Z",
+    "type": "input",
+    "url": "https://www.youtube.com/",
+    "value": "lofi hip hop radio"
+  },
+  {
+    "locators": [
+      {
+        "strategy": "css",
+        "value": "input[name=\"search_query\"]"
+      },
+      {
+        "strategy": "css",
+        "value": "input[placeholder=\"Search\"]"
+      },
+      {
+        "strategy": "css",
+        "value": "input.ytSearchboxComponentInput.yt-searchbox-input.title"
+      },
+      {
+        "role": "combobox",
+        "strategy": "role"
+      },
+      {
+        "strategy": "xpath",
+        "value": "//*[@id=\"center\"]/yt-searchbox[1]/div[1]/div[1]/div[1]/form[1]/input[1]"
+      }
+    ],
+    "meta": null,
+    "pageTitle": "YouTube",
+    "selector": "input[name=\"search_query\"]",
+    "timestamp": "2026-07-24T18:01:08.428Z",
+    "type": "keydown",
+    "url": "https://www.youtube.com/",
+    "value": "Enter"
+  },
+  {
+    "locators": [
+      {
+        "strategy": "css",
+        "value": "input[name=\"search_query\"]"
+      },
+      {
+        "strategy": "css",
+        "value": "input[placeholder=\"Search\"]"
+      },
+      {
+        "strategy": "css",
+        "value": "input.ytSearchboxComponentInput.yt-searchbox-input.title"
+      },
+      {
+        "role": "combobox",
+        "strategy": "role"
+      },
+      {
+        "strategy": "xpath",
+        "value": "//*[@id=\"center\"]/yt-searchbox[1]/div[1]/div[1]/div[1]/form[1]/input[1]"
+      }
+    ],
+    "meta": {
+      "fieldContext": {
+        "ariaLabel": null,
+        "label": null,
+        "name": "search_query",
+        "nearbyText": null,
+        "placeholder": "Search"
+      }
+    },
+    "pageTitle": "YouTube",
+    "selector": "input[name=\"search_query\"]",
+    "timestamp": "2026-07-24T18:01:08.464Z",
+    "type": "change",
+    "url": "https://www.youtube.com/results?search_query=lofi+hip+hop+radio",
+    "value": "lofi hip hop radio"
+  },
+  {
+    "locators": null,
+    "meta": null,
+    "pageTitle": "lofi hip hop radio - YouTube",
+    "selector": "body",
+    "timestamp": "2026-07-24T18:01:08.473Z",
+    "type": "keyup",
+    "url": "https://www.youtube.com/results?search_query=lofi+hip+hop+radio",
+    "value": "Enter"
+  },
+  {
+    "locators": [
+      {
+        "strategy": "css",
+        "value": "#thumbnail"
+      },
+      {
+        "name": "Now playing",
+        "role": "link",
+        "strategy": "role"
+      },
+      {
+        "strategy": "text",
+        "tag": "a",
+        "value": "Now playing"
+      },
+      {
+        "strategy": "css",
+        "value": "a.yt-simple-endpoint.inline-block.style-scope"
+      },
+      {
+        "strategy": "xpath",
+        "value": "//*[@id=\"thumbnail\"]"
+      }
+    ],
+    "meta": {
+      "dateAttr": null,
+      "inCalendarContext": false,
+      "inListboxContext": false,
+      "role": null,
+      "tag": "a",
+      "x": 346,
+      "y": 579
+    },
+    "pageTitle": "lofi hip hop radio - YouTube",
+    "selector": "#thumbnail",
+    "timestamp": "2026-07-24T18:01:24.765Z",
+    "type": "click",
+    "url": "https://www.youtube.com/results?search_query=lofi+hip+hop+radio",
+    "value": "Now playing"
+  },
+  {
+    "locators": null,
+    "meta": {
+      "target": "window"
+    },
+    "pageTitle": "lofi hip hop radio - YouTube",
+    "selector": null,
+    "timestamp": "2026-07-24T18:01:24.916Z",
+    "type": "scroll",
+    "url": "https://www.youtube.com/watch?v=X4VbdwhkE10",
+    "value": "0,202.39999389648438"
+  },
+  {
+    "locators": null,
+    "meta": {
+      "target": "window"
+    },
+    "pageTitle": "YouTube",
+    "selector": null,
+    "timestamp": "2026-07-24T18:01:25.824Z",
+    "type": "scroll",
+    "url": "https://www.youtube.com/watch?v=X4VbdwhkE10",
+    "value": "0,0"
+  }
+]

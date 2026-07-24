@@ -1,0 +1,48 @@
+Extension dir: C:\Users\DELL\OneDrive\Desktop\vibe coding 1st\extension
+User data dir: C:\Users\DELL\AppData\Local\Temp\forgeflow-ext-e2e-1784588939287
+Extension ID: nlgijfbgdgkgojappngdcbeoldffpaoo
+Page A loaded: https://the-internet.herokuapp.com/login
+Popup loaded
+Signing up as ext-e2e-1784588946483@example.com
+Signup succeeded — dashboard view visible
+Clicking Start Recording...
+Recording a real login flow on https://the-internet.herokuapp.com/login
+Login submitted, landed on https://the-internet.herokuapp.com/secure
+Clicking Stop Recording...
+[dialog] prompt Name this workflow:
+[network] parameterize response status 200
+[dialog] alert Workflow saved! Open the Dashboard to see it under My APIs.
+parameterize response: {"success":true,"workflowId":"12","name":"Extension E2E Login 1784588953224","description":"Automates a workflow on the-internet.herokuapp.com. It navigates to the page and clicks 3 elements and fills in 4 fields. Takes 2 inputs: Username (text, e.g. \"tomsmith\"), Password (text, e.g. \"[REDACTED]\").","parameters":[{"name":"username","type":"text","label":"Username","description":"The value entered for the \"Username\" field. Example from recording: \"tomsmith\".","defaultValue":"tomsmith","ev
+SAVED workflow id: 12 name: Extension E2E Login 1784588953224
+parameters: [{"name":"username","type":"text","label":"Username","description":"The value entered for the \"Username\" field. Example from recording: \"tomsmith\".","defaultValue":"tomsmith","eventIndex":2},{"name":"password","type":"text","label":"Password","description":"The value entered for the \"Password\" field.","defaultValue":"[REDACTED]","eventIndex":5}]
+steps: ["0:navigation","1:click","2:input","3:change","4:click","5:input","6:change","7:click","8:navigation"]
+Found My APIs card for Extension E2E Login 1784588953224
+Overrode password parameter: password
+Clicking Run API...
+[network] run response status 200
+UI result class: run-result run-result--success
+UI result text: ✓ Workflow completed successfully. in 5.0s
+
+Ran with: username = tomsmith, password = SuperSecretPassword!
+
+Url
+#
+Title
+—
+Field 3
+—
+Url
+/img/forkme_right_green_007200.png
+Title
+Welcome to the Secure Area. When you are done click logout below.
+Field 3
+Logout
+Url
+http://elementalselenium.com/
+Title
+—
+Field 3
+—
+View raw response
+run response: {"success":true,"message":"Workflow completed successfully.","finalUrl":"https://the-internet.herokuapp.com/secure","finalTitle":"The Internet","skippedSteps":[],"stepLog":[{"index":0,"type":"navigation","selector":"https://the-internet.herokuapp.com/login","urlBefore":"about:blank","url":"https://the-internet.herokuapp.com/login","elementFound":null,"actionExecuted":true,"strategyUsed":null,"retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"/app/debug/step0-1784588960215-1.jpg","result":"success","navigationStrategyUsed":"domcontentloaded","durationMs":2067},{"index":1,"type":"click","selector":"#username","urlBefore":"https://the-internet.herokuapp.com/login","url":"https://the-internet.herokuapp.com/login","elementFound":true,"actionExecuted":true,"strategyUsed":"css","retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"/app/debug/step1-1784588960453-2.jpg","result":"success","strategyValue":"#username","matchCount":1,"visibleCount":1,"trialClickReason":null,"durationMs":228},{"index":2,"type":"input","selector":"#username","urlBefore":"https://the-internet.herokuapp.com/login","url":"https://the-internet.herokuapp.com/login","elementFound":true,"actionExecuted":true,"strategyUsed":"label","retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"/app/debug/step2-1784588960626-3.jpg","result":"success","strategyValue":"Username","matchCount":1,"visibleCount":1,"durationMs":195},{"index":3,"type":"change","selector":"#username","urlBefore":"https://the-internet.herokuapp.com/login","url":"https://the-internet.herokuapp.com/login","elementFound":true,"actionExecuted":true,"strategyUsed":"label","retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"/app/debug/step3-1784588960819-4.jpg","result":"success","strategyValue":"Username","matchCount":1,"visibleCount":1,"durationMs":171},{"index":4,"type":"click","selector":"#password","urlBefore":"https://the-internet.herokuapp.com/login","url"
+REPLAY SUCCEEDED END TO END VIA REAL EXTENSION + DEPLOYED BACKEND

@@ -1,0 +1,248 @@
+{
+  "parameters": [
+    {
+      "name": "search",
+      "type": "text",
+      "label": "Search",
+      "description": "The value entered into the field labeled \"Search\". Example from recording: \"lofi hip hop radio\".",
+      "defaultValue": "lofi hip hop radio",
+      "eventIndex": 2
+    }
+  ],
+  "steps": [
+    {
+      "index": 0,
+      "originalIndex": 0,
+      "type": "navigation",
+      "selector": null,
+      "locators": null,
+      "value": "https://www.youtube.com/",
+      "url": "https://www.youtube.com/",
+      "meta": {
+        "fromUrl": null,
+        "method": "full-navigation"
+      },
+      "timestamp": "2026-07-24T18:01:06.743Z"
+    },
+    {
+      "index": 1,
+      "originalIndex": 1,
+      "type": "click",
+      "selector": "input[name=\"search_query\"]",
+      "locators": [
+        {
+          "strategy": "css",
+          "value": "input[name=\"search_query\"]"
+        },
+        {
+          "strategy": "css",
+          "value": "input[placeholder=\"Search\"]"
+        },
+        {
+          "strategy": "css",
+          "value": "input.ytSearchboxComponentInput.yt-searchbox-input.title"
+        },
+        {
+          "role": "combobox",
+          "strategy": "role"
+        },
+        {
+          "strategy": "xpath",
+          "value": "//*[@id=\"center\"]/yt-searchbox[1]/div[1]/div[1]/div[1]/form[1]/input[1]"
+        }
+      ],
+      "value": "",
+      "url": "https://www.youtube.com/",
+      "meta": {
+        "dateAttr": null,
+        "inCalendarContext": false,
+        "inListboxContext": true,
+        "role": "combobox",
+        "tag": "input",
+        "x": 588,
+        "y": 28
+      },
+      "timestamp": "2026-07-24T18:01:08.331Z"
+    },
+    {
+      "index": 2,
+      "originalIndex": 2,
+      "type": "input",
+      "selector": "input[name=\"search_query\"]",
+      "locators": [
+        {
+          "strategy": "css",
+          "value": "input[name=\"search_query\"]"
+        },
+        {
+          "strategy": "css",
+          "value": "input[placeholder=\"Search\"]"
+        },
+        {
+          "strategy": "css",
+          "value": "input.ytSearchboxComponentInput.yt-searchbox-input.title"
+        },
+        {
+          "role": "combobox",
+          "strategy": "role"
+        },
+        {
+          "strategy": "xpath",
+          "value": "//*[@id=\"center\"]/yt-searchbox[1]/div[1]/div[1]/div[1]/form[1]/input[1]"
+        }
+      ],
+      "value": "{{search}}",
+      "url": "https://www.youtube.com/",
+      "meta": {
+        "fieldContext": {
+          "ariaLabel": null,
+          "label": null,
+          "name": "search_query",
+          "nearbyText": null,
+          "placeholder": "Search"
+        }
+      },
+      "timestamp": "2026-07-24T18:01:08.362Z"
+    },
+    {
+      "index": 3,
+      "originalIndex": 3,
+      "type": "keydown",
+      "selector": "input[name=\"search_query\"]",
+      "locators": [
+        {
+          "strategy": "css",
+          "value": "input[name=\"search_query\"]"
+        },
+        {
+          "strategy": "css",
+          "value": "input[placeholder=\"Search\"]"
+        },
+        {
+          "strategy": "css",
+          "value": "input.ytSearchboxComponentInput.yt-searchbox-input.title"
+        },
+        {
+          "role": "combobox",
+          "strategy": "role"
+        },
+        {
+          "strategy": "xpath",
+          "value": "//*[@id=\"center\"]/yt-searchbox[1]/div[1]/div[1]/div[1]/form[1]/input[1]"
+        }
+      ],
+      "value": "Enter",
+      "url": "https://www.youtube.com/",
+      "meta": null,
+      "timestamp": "2026-07-24T18:01:08.428Z"
+    },
+    {
+      "index": 4,
+      "originalIndex": 4,
+      "type": "change",
+      "selector": "input[name=\"search_query\"]",
+      "locators": [
+        {
+          "strategy": "css",
+          "value": "input[name=\"search_query\"]"
+        },
+        {
+          "strategy": "css",
+          "value": "input[placeholder=\"Search\"]"
+        },
+        {
+          "strategy": "css",
+          "value": "input.ytSearchboxComponentInput.yt-searchbox-input.title"
+        },
+        {
+          "role": "combobox",
+          "strategy": "role"
+        },
+        {
+          "strategy": "xpath",
+          "value": "//*[@id=\"center\"]/yt-searchbox[1]/div[1]/div[1]/div[1]/form[1]/input[1]"
+        }
+      ],
+      "value": "{{search}}",
+      "url": "https://www.youtube.com/results?search_query=lofi+hip+hop+radio",
+      "meta": {
+        "fieldContext": {
+          "ariaLabel": null,
+          "label": null,
+          "name": "search_query",
+          "nearbyText": null,
+          "placeholder": "Search"
+        }
+      },
+      "timestamp": "2026-07-24T18:01:08.464Z"
+    },
+    {
+      "index": 5,
+      "originalIndex": 6,
+      "type": "click",
+      "selector": "#thumbnail",
+      "locators": [
+        {
+          "strategy": "css",
+          "value": "#thumbnail"
+        },
+        {
+          "name": "Now playing",
+          "role": "link",
+          "strategy": "role"
+        },
+        {
+          "strategy": "text",
+          "tag": "a",
+          "value": "Now playing"
+        },
+        {
+          "strategy": "css",
+          "value": "a.yt-simple-endpoint.inline-block.style-scope"
+        },
+        {
+          "strategy": "xpath",
+          "value": "//*[@id=\"thumbnail\"]"
+        }
+      ],
+      "value": "Now playing",
+      "url": "https://www.youtube.com/results?search_query=lofi+hip+hop+radio",
+      "meta": {
+        "dateAttr": null,
+        "inCalendarContext": false,
+        "inListboxContext": false,
+        "role": null,
+        "tag": "a",
+        "x": 346,
+        "y": 579
+      },
+      "timestamp": "2026-07-24T18:01:24.765Z"
+    },
+    {
+      "index": 6,
+      "originalIndex": 7,
+      "type": "scroll",
+      "selector": null,
+      "locators": null,
+      "value": "0,202.39999389648438",
+      "url": "https://www.youtube.com/watch?v=X4VbdwhkE10",
+      "meta": {
+        "target": "window"
+      },
+      "timestamp": "2026-07-24T18:01:24.916Z"
+    },
+    {
+      "index": 7,
+      "originalIndex": 8,
+      "type": "scroll",
+      "selector": null,
+      "locators": null,
+      "value": "0,0",
+      "url": "https://www.youtube.com/watch?v=X4VbdwhkE10",
+      "meta": {
+        "target": "window"
+      },
+      "timestamp": "2026-07-24T18:01:25.824Z"
+    }
+  ]
+}

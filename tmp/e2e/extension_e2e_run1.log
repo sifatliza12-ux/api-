@@ -1,0 +1,27 @@
+Extension dir: C:\Users\DELL\OneDrive\Desktop\vibe coding 1st\extension
+User data dir: C:\Users\DELL\AppData\Local\Temp\forgeflow-ext-e2e-1784588879613
+Extension ID: nlgijfbgdgkgojappngdcbeoldffpaoo
+Page A loaded: https://the-internet.herokuapp.com/login
+Popup loaded
+Signing up as ext-e2e-1784588888979@example.com
+Signup succeeded — dashboard view visible
+Clicking Start Recording...
+Recording a real login flow on https://the-internet.herokuapp.com/login
+Login submitted, landed on https://the-internet.herokuapp.com/secure
+Clicking Stop Recording...
+[dialog] prompt Name this workflow:
+[dialog] prompt Name this workflow:
+[network] parameterize response status 200
+parameterize response: {"success":true,"workflowId":"11","name":"Extension E2E Login 1784588895465","description":"Automates a workflow on the-internet.herokuapp.com. It navigates to the page and clicks 3 elements and fills in 4 fields. Takes 2 inputs: Username (text, e.g. \"tomsmith\"), Password (text, e.g. \"[REDACTED]\").","parameters":[{"name":"username","type":"text","label":"Username","description":"The value entered for the \"Username\" field. Example from recording: \"tomsmith\".","defaultValue":"tomsmith","ev
+SAVED workflow id: 11 name: Extension E2E Login 1784588895465
+parameters: [{"name":"username","type":"text","label":"Username","description":"The value entered for the \"Username\" field. Example from recording: \"tomsmith\".","defaultValue":"tomsmith","eventIndex":2},{"name":"password","type":"text","label":"Password","description":"The value entered for the \"Password\" field.","defaultValue":"[REDACTED]","eventIndex":5}]
+steps: ["0:navigation","1:click","2:input","3:change","4:click","5:input","6:change","7:click","8:navigation"]
+Found My APIs card for Extension E2E Login 1784588895465
+SCRIPT CRASHED: page.waitForSelector: Timeout 10000ms exceeded.
+Call log:
+[2m  - waiting for locator('.modal-run-api') to be visible[22m
+
+    at C:\Users\DELL\OneDrive\Desktop\vibe coding 1st\backend\.e2e_scratch\extension_e2e_deployed.js:158:15 {
+  log: [ "  - waiting for locator('.modal-run-api') to be visible" ],
+  name: 'TimeoutError'
+}

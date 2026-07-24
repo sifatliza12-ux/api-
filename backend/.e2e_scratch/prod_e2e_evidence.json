@@ -1,0 +1,140 @@
+{
+  "account": "prod-e2e-1784839985183@example.com",
+  "evidence": [
+    {
+      "site": "todomvc-react-toggle",
+      "workflowId": "51",
+      "recordedStepCount": 7,
+      "replayedStepCount": 7,
+      "failedStepCount": 0,
+      "finalUrl": "https://todomvc.com/examples/react/dist/",
+      "totalDurationMs": 2911,
+      "wallClockMs": 3664,
+      "httpStatus": 200,
+      "verified": true,
+      "success": true,
+      "resultText": "✓ Workflow completed successfully. in 2.9s\n\nRan with: newTodoInput = Buy milk, todoItemToggle = true\n\nUrl\nhttps://react.dev/learn\nUrl 2\nhttps://react.dev/reference/react\nUrl 3\nhttps://petehuntsposts.q",
+      "failedSteps": [],
+      "screenshotPaths": [
+        "/app/debug/step0-1784839996862-8.jpg",
+        "/app/debug/step1-1784839997090-9.jpg",
+        "/app/debug/step2-1784839997246-10.jpg",
+        "/app/debug/step3-1784839997406-11.jpg",
+        "/app/debug/step4-1784839997643-12.jpg",
+        "/app/debug/step5-1784839997813-13.jpg",
+        "/app/debug/step6-1784839997989-14.jpg"
+      ],
+      "productionApiBase": "https://api-production-6bcb.up.railway.app",
+      "savedAt": "2026-07-23T20:53:18.401Z"
+    },
+    {
+      "site": "todomvc-vue-toggle",
+      "workflowId": "52",
+      "recordedStepCount": 8,
+      "replayedStepCount": 8,
+      "failedStepCount": 0,
+      "finalUrl": "https://todomvc.com/examples/vue/dist/#/",
+      "totalDurationMs": 2882,
+      "wallClockMs": 3667,
+      "httpStatus": 200,
+      "verified": true,
+      "success": true,
+      "resultText": "✓ Workflow completed successfully. in 2.9s\n\nRan with: whatNeedsToBe = Buy milk, toggle = true\n\nField 1\nDouble-click to edit a todo\nField 1\nCreated by the TodoMVC Team\nField 1\nhttp://todomvc.com\nView r",
+      "failedSteps": [],
+      "screenshotPaths": [
+        "/app/debug/step0-1784840007317-15.jpg",
+        "/app/debug/step1-1784840007523-16.jpg",
+        "/app/debug/step2-1784840007676-17.jpg",
+        "/app/debug/step3-1784840007830-18.jpg",
+        "/app/debug/step4-1784840008011-19.jpg",
+        "/app/debug/step5-1784840008208-20.jpg",
+        "/app/debug/step6-1784840008377-21.jpg",
+        "/app/debug/step7-1784840008530-22.jpg"
+      ],
+      "productionApiBase": "https://api-production-6bcb.up.railway.app",
+      "savedAt": "2026-07-23T20:53:28.957Z"
+    },
+    {
+      "site": "wikipedia-search",
+      "workflowId": "53",
+      "recordedStepCount": 7,
+      "replayedStepCount": 7,
+      "failedStepCount": 0,
+      "finalUrl": "https://en.wikipedia.org/wiki/Playwright_(software)",
+      "totalDurationMs": 4112,
+      "wallClockMs": 4742,
+      "httpStatus": 200,
+      "verified": true,
+      "success": true,
+      "resultText": "✓ Workflow completed successfully. in 4.1s\n\nRan with: searchWikipedia = Playwright (software)\n\nField 1\n@media(min-width:640px){.mw-parser-output .infobox{margin-left:1em;float:right;clear:right;width:",
+      "failedSteps": [],
+      "screenshotPaths": [
+        "/app/debug/step0-1784840018325-23.jpg",
+        "/app/debug/step1-1784840018560-24.jpg",
+        "/app/debug/step2-1784840018767-25.jpg",
+        "/app/debug/step3-1784840019693-26.jpg",
+        "/app/debug/step4-1784840019871-27.jpg",
+        "/app/debug/step5-1784840020896-28.jpg",
+        "/app/debug/step6-1784840020991-29.jpg"
+      ],
+      "productionApiBase": "https://api-production-6bcb.up.railway.app",
+      "savedAt": "2026-07-23T20:53:41.254Z"
+    },
+    {
+      "site": "saucedemo-login",
+      "workflowId": "54",
+      "recordedStepCount": 8,
+      "replayedStepCount": 8,
+      "failedStepCount": 0,
+      "finalUrl": "https://www.saucedemo.com/inventory.html",
+      "totalDurationMs": 3141,
+      "wallClockMs": 4186,
+      "httpStatus": 200,
+      "verified": true,
+      "success": true,
+      "resultText": "✓ Workflow completed successfully. in 3.1s\n\nRan with: username = standard_user, password = secret_sauce\n\nField 1\nOpen Menu\nOpen Menu\ndata:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0A",
+      "failedSteps": [],
+      "screenshotPaths": [
+        "/app/debug/step0-1784840031480-30.jpg",
+        "/app/debug/step1-1784840031706-31.jpg",
+        "/app/debug/step2-1784840031862-32.jpg",
+        "/app/debug/step3-1784840032010-33.jpg",
+        "/app/debug/step4-1784840032206-34.jpg",
+        "/app/debug/step5-1784840032359-35.jpg",
+        "/app/debug/step6-1784840032510-36.jpg",
+        "/app/debug/step7-1784840032734-37.jpg"
+      ],
+      "productionApiBase": "https://api-production-6bcb.up.railway.app",
+      "savedAt": "2026-07-23T20:53:53.405Z"
+    },
+    {
+      "site": "youtube-search",
+      "workflowId": "55",
+      "recordedStepCount": 5,
+      "replayedStepCount": 5,
+      "failedStepCount": 0,
+      "finalUrl": "https://www.youtube.com/results?search_query=lofi+hip+hop+radio",
+      "totalDurationMs": 5187,
+      "wallClockMs": 6310,
+      "httpStatus": 200,
+      "verified": true,
+      "success": true,
+      "resultText": "✓ Workflow completed successfully. in 5.2s\n\nRan with: search = lofi hip hop radio\n\nField 1\nif (window.ytcsi) {window.ytcsi.tick('bs', null, '');}\nField 1\nytcfg.set('initialBodyClientWidth', document.b",
+      "failedSteps": [],
+      "screenshotPaths": [
+        "/app/debug/step0-1784840051003-38.jpg",
+        "/app/debug/step1-1784840051227-39.jpg",
+        "/app/debug/step2-1784840051397-40.jpg",
+        "/app/debug/step3-1784840051590-41.jpg",
+        "/app/debug/step4-1784840051781-42.jpg"
+      ],
+      "productionApiBase": "https://api-production-6bcb.up.railway.app",
+      "savedAt": "2026-07-23T20:54:12.640Z"
+    },
+    {
+      "site": "booking-com-destination-search",
+      "success": false,
+      "error": "page.waitForSelector: Timeout 90000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.run-result') to be visible\u001b[22m\n\u001b[2m    179 × locator resolved to hidden <div class=\"run-result\"></div>\u001b[22m\n"
+    }
+  ]
+}

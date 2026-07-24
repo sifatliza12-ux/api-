@@ -1,0 +1,95 @@
+Replay engine REAL-SITE E2E verification harness
+
+(isolated test DB: C:\Users\DELL\AppData\Local\Temp\forgeflow-realsites-test-1784587118195)
+
+============ RECORDING: wikipedia-search ============
+Recorded 7 events: navigation, click, input, change, keydown, click, keyup
+
+============ PARAMETERIZING: wikipedia-search ============
+[Backend][pipeline] step 3: parameterizer received { eventCount: 7 }
+[Backend][pipeline] step 2: event condenser received { rawEventCount: 7 }
+[Backend][pipeline] step 2: event condenser output { condensedEventCount: 5 }
+[Backend][pipeline] step 4: workflow template created { stepCount: 5, parameterCount: 1 }
+Parameters: searchWikipedia="Alan Turing"
+Steps: [0] navigation, [1] click, [2] input, [3] change, [4] dynamic_click
+
+============ SAVING TO DB: wikipedia-search ============
+Saved as workflowId=1
+
+============ LOADING FROM DB: wikipedia-search ============
+Loaded back 5 steps, 1 parameter(s) — DB round-trip intact
+
+============ REPLAYING (default values): wikipedia-search ============
+[Backend][replay] {"index":0,"type":"navigation","selector":"https://en.wikipedia.org/wiki/Main_Page","urlBefore":"about:blank","url":"https://en.wikipedia.org/wiki/Main_Page","elementFound":null,"actionExecuted":true,"strategyUsed":null,"retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\step0-1784587125265-1.jpg","result":"success","navigationStrategyUsed":"domcontentloaded","durationMs":2239}
+[Backend][replay] {"index":1,"type":"click","selector":"#searchInput","urlBefore":"https://en.wikipedia.org/wiki/Main_Page","url":"https://en.wikipedia.org/wiki/Main_Page","elementFound":true,"actionExecuted":true,"strategyUsed":"css","retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\step1-1784587125698-2.jpg","result":"success","strategyValue":"#searchInput","matchCount":1,"visibleCount":1,"trialClickReason":null,"durationMs":441}
+[Backend][replay][blocker] {"stepIndex":2,"stepType":"input","reason":"playwright action was intercepted/blocked","selectorUsed":null,"matchCount":null,"visibleCount":null,"playwrightError":"locator.fill: Timeout 3000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#searchInput').first()\u001b[22m\n","timestamp":"2026-07-20T22:38:48.978Z","pageUrl":"https://en.wikipedia.org/wiki/Main_Page","pageTitle":"Wikipedia, the free encyclopedia","viewport":{"width":1280,"height":720},"blockerAtPoint":null,"matchedElement":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\blocker-step2-1784587189008-3.png"}
+[Backend][replay][blocker] {"stepIndex":2,"stepType":"input","reason":"no candidate locators were recorded for this step","selectorUsed":null,"matchCount":0,"visibleCount":0,"playwrightError":null,"timestamp":"2026-07-20T22:40:19.803Z","pageUrl":"https://en.wikipedia.org/wiki/Main_Page","pageTitle":"Wikipedia, the free encyclopedia","viewport":{"width":1280,"height":720},"blockerAtPoint":null,"matchedElement":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\blocker-step2-1784587219807-4.png"}
+[Backend][replay] STEP FAILED — replay stops here. {"index":2,"type":"input","selector":"#searchInput","urlBefore":"https://en.wikipedia.org/wiki/Main_Page","url":"https://en.wikipedia.org/wiki/Main_Page","elementFound":false,"actionExecuted":false,"strategyUsed":"css","retries":0,"blockersDismissed":["attempted:escape-key"],"failureReason":"no candidate locators were recorded for this step","screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\step2-1784587219888-5.jpg","result":"failed","strategyValue":"#searchInput","matchCount":0,"visibleCount":0,"blockerDiagnostics":[{"stepIndex":2,"stepType":"input","reason":"playwright action was intercepted/blocked","selectorUsed":null,"matchCount":null,"visibleCount":null,"playwrightError":"locator.fill: Timeout 3000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#searchInput').first()\u001b[22m\n","timestamp":"2026-07-20T22:38:48.978Z","pageUrl":"https://en.wikipedia.org/wiki/Main_Page","pageTitle":"Wikipedia, the free encyclopedia","viewport":{"width":1280,"height":720},"blockerAtPoint":null,"matchedElement":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\blocker-step2-1784587189008-3.png"},{"stepIndex":2,"stepType":"input","reason":"no candidate locators were recorded for this step","selectorUsed":null,"matchCount":0,"visibleCount":0,"playwrightError":null,"timestamp":"2026-07-20T22:40:19.803Z","pageUrl":"https://en.wikipedia.org/wiki/Main_Page","pageTitle":"Wikipedia, the free encyclopedia","viewport":{"width":1280,"height":720},"blockerAtPoint":null,"matchedElement":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\blocker-step2-1784587219807-4.png"}],"durationMs":94164}
+
+✗ wikipedia-search — FAILED: Step 2 (input) failed: No actionable element found for step (tried 8 locator candidate(s)): no candidate locators were recorded for this step
+
+============ RECORDING: saucedemo-login-cart-sort ============
+Recorded 10 events: navigation, input, change, input, change, click, navigation, click, input, change
+
+============ PARAMETERIZING: saucedemo-login-cart-sort ============
+[Backend][pipeline] step 3: parameterizer received { eventCount: 10 }
+[Backend][pipeline] step 2: event condenser received { rawEventCount: 10 }
+[Backend][pipeline] step 2: event condenser output { condensedEventCount: 10 }
+[Backend][pipeline] step 4: workflow template created { stepCount: 10, parameterCount: 3 }
+Parameters: username="standard_user", password="[REDACTED]", nameAToZ="lohi"
+Steps: [0] navigation, [1] input, [2] change, [3] input, [4] change, [5] click, [6] navigation, [7] click, [8] input, [9] change
+
+============ SAVING TO DB: saucedemo-login-cart-sort ============
+Saved as workflowId=2
+
+============ LOADING FROM DB: saucedemo-login-cart-sort ============
+Loaded back 10 steps, 3 parameter(s) — DB round-trip intact
+
+============ REPLAYING (default values): saucedemo-login-cart-sort ============
+[Backend][replay] {"index":0,"type":"navigation","selector":"https://www.saucedemo.com/","urlBefore":"about:blank","url":"https://www.saucedemo.com/","elementFound":null,"actionExecuted":true,"strategyUsed":null,"retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\step0-1784587227372-6.jpg","result":"success","navigationStrategyUsed":"domcontentloaded","durationMs":3687}
+[Backend][replay] {"index":1,"type":"input","selector":"#user-name","urlBefore":"https://www.saucedemo.com/","url":"https://www.saucedemo.com/","elementFound":true,"actionExecuted":true,"strategyUsed":"css","retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\step1-1784587227600-7.jpg","result":"success","strategyValue":"[data-testid=\"username\"], [data-test-id=\"username\"], [data-test=\"username\"], [data-qa=\"username\"]","matchCount":1,"visibleCount":1,"durationMs":245}
+[Backend][replay] {"index":2,"type":"change","selector":"#user-name","urlBefore":"https://www.saucedemo.com/","url":"https://www.saucedemo.com/","elementFound":true,"actionExecuted":true,"strategyUsed":"css","retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\step2-1784587227837-8.jpg","result":"success","strategyValue":"[data-testid=\"username\"], [data-test-id=\"username\"], [data-test=\"username\"], [data-qa=\"username\"]","matchCount":1,"visibleCount":1,"durationMs":240}
+[Backend][replay] {"index":3,"type":"input","selector":"#password","urlBefore":"https://www.saucedemo.com/","url":"https://www.saucedemo.com/","elementFound":true,"actionExecuted":true,"strategyUsed":"css","retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\step3-1784587228087-9.jpg","result":"success","strategyValue":"[data-testid=\"password\"], [data-test-id=\"password\"], [data-test=\"password\"], [data-qa=\"password\"]","matchCount":1,"visibleCount":1,"durationMs":250}
+[Backend][replay] {"index":4,"type":"change","selector":"#password","urlBefore":"https://www.saucedemo.com/","url":"https://www.saucedemo.com/","elementFound":true,"actionExecuted":true,"strategyUsed":"css","retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\step4-1784587228341-10.jpg","result":"success","strategyValue":"[data-testid=\"password\"], [data-test-id=\"password\"], [data-test=\"password\"], [data-qa=\"password\"]","matchCount":1,"visibleCount":1,"durationMs":247}
+[Backend][replay] {"index":5,"type":"click","selector":"#login-button","urlBefore":"https://www.saucedemo.com/","url":"https://www.saucedemo.com/inventory.html","elementFound":true,"actionExecuted":true,"strategyUsed":"css","retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\step5-1784587228685-11.jpg","result":"success","strategyValue":"[data-testid=\"login-button\"], [data-test-id=\"login-button\"], [data-test=\"login-button\"], [data-qa=\"login-button\"]","matchCount":1,"visibleCount":1,"trialClickReason":null,"durationMs":342}
+[Backend][replay] {"index":6,"type":"navigation","selector":"https://www.saucedemo.com/inventory.html","urlBefore":"https://www.saucedemo.com/inventory.html","url":"https://www.saucedemo.com/inventory.html","elementFound":null,"actionExecuted":true,"strategyUsed":"navigation-already-occurred","retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\step6-1784587228771-12.jpg","result":"success","durationMs":88}
+[Backend][replay] {"index":7,"type":"click","selector":"#add-to-cart-sauce-labs-backpack","urlBefore":"https://www.saucedemo.com/inventory.html","url":"https://www.saucedemo.com/inventory.html","elementFound":true,"actionExecuted":true,"strategyUsed":"css","retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\step7-1784587229078-13.jpg","result":"success","strategyValue":"[data-testid=\"add-to-cart-sauce-labs-backpack\"], [data-test-id=\"add-to-cart-sauce-labs-backpack\"], [data-test=\"add-to-cart-sauce-labs-backpack\"], [data-qa=\"add-to-cart-sauce-labs-backpack\"]","matchCount":1,"visibleCount":1,"trialClickReason":null,"durationMs":307}
+[Backend][replay] {"index":8,"type":"input","selector":"select.product_sort_container","urlBefore":"https://www.saucedemo.com/inventory.html","url":"https://www.saucedemo.com/inventory.html","elementFound":true,"actionExecuted":true,"strategyUsed":"css","retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\step8-1784587229340-14.jpg","result":"success","strategyValue":"[data-testid=\"product-sort-container\"], [data-test-id=\"product-sort-container\"], [data-test=\"product-sort-container\"], [data-qa=\"product-sort-container\"]","matchCount":1,"visibleCount":1,"durationMs":245}
+[Backend][replay] {"index":9,"type":"change","selector":"select.product_sort_container","urlBefore":"https://www.saucedemo.com/inventory.html","url":"https://www.saucedemo.com/inventory.html","elementFound":true,"actionExecuted":true,"strategyUsed":"css","retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\step9-1784587229546-15.jpg","result":"success","strategyValue":"[data-testid=\"product-sort-container\"], [data-test-id=\"product-sort-container\"], [data-test=\"product-sort-container\"], [data-qa=\"product-sort-container\"]","matchCount":1,"visibleCount":1,"durationMs":227}
+[Backend][extraction] method=dom workflowId=realsite-e2e-saucedemo-login-cart-sort-default itemsFound=2 confidence=0.7
+
+✓ saucedemo-login-cart-sort — all stages passed
+
+============ RECORDING: the-internet-dynamic-loading ============
+Recorded 3 events: navigation, click, click
+
+============ PARAMETERIZING: the-internet-dynamic-loading ============
+[Backend][pipeline] step 3: parameterizer received { eventCount: 3 }
+[Backend][pipeline] step 2: event condenser received { rawEventCount: 3 }
+[Backend][pipeline] step 2: event condenser output { condensedEventCount: 3 }
+[Backend][pipeline] step 4: workflow template created { stepCount: 3, parameterCount: 0 }
+Parameters: (none)
+Steps: [0] navigation, [1] click, [2] click
+
+============ SAVING TO DB: the-internet-dynamic-loading ============
+Saved as workflowId=3
+
+============ LOADING FROM DB: the-internet-dynamic-loading ============
+Loaded back 3 steps, 0 parameter(s) — DB round-trip intact
+
+============ REPLAYING (default values): the-internet-dynamic-loading ============
+[Backend][replay] {"index":0,"type":"navigation","selector":"https://the-internet.herokuapp.com/dynamic_loading/2","urlBefore":"about:blank","url":"https://the-internet.herokuapp.com/dynamic_loading/2","elementFound":null,"actionExecuted":true,"strategyUsed":null,"retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\step0-1784587251119-16.jpg","result":"success","navigationStrategyUsed":"domcontentloaded","durationMs":5194}
+[Backend][replay] {"index":1,"type":"click","selector":"button","urlBefore":"https://the-internet.herokuapp.com/dynamic_loading/2","url":"https://the-internet.herokuapp.com/dynamic_loading/2","elementFound":true,"actionExecuted":true,"strategyUsed":"role","retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\step1-1784587251494-17.jpg","result":"success","strategyValue":"button:Start","matchCount":1,"visibleCount":1,"trialClickReason":null,"durationMs":371}
+[Backend][replay] {"index":2,"type":"click","selector":"h4","urlBefore":"https://the-internet.herokuapp.com/dynamic_loading/2","url":"https://the-internet.herokuapp.com/dynamic_loading/2","elementFound":true,"actionExecuted":true,"strategyUsed":"css","retries":0,"blockersDismissed":[],"failureReason":null,"screenshotPath":"C:\\Users\\DELL\\OneDrive\\Desktop\\vibe coding 1st\\backend\\debug\\step2-1784587251771-18.jpg","result":"success","strategyValue":"h4","matchCount":1,"visibleCount":1,"trialClickReason":null,"durationMs":278}
+[Backend][extraction] method=dom workflowId=realsite-e2e-the-internet-dynamic-loading-default itemsFound=2 confidence=0.55
+
+✓ the-internet-dynamic-loading — all stages passed
+
+============ FULL REPORT ============
+✗ wikipedia-search — Step 2 (input) failed: No actionable element found for step (tried 8 locator candidate(s)): no candidate locators were recorded for this step
+✓ saucedemo-login-cart-sort
+✓ the-internet-dynamic-loading
+
+2/3 sites fully passed (record -> save -> load -> replay -> verify)
+Full JSON report: C:\Users\DELL\OneDrive\Desktop\vibe coding 1st\backend\debug\realsites-report-1784587252217.json
+Per-step screenshots/diagnostics: C:\Users\DELL\OneDrive\Desktop\vibe coding 1st\backend\debug
