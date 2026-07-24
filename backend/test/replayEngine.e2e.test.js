@@ -208,6 +208,59 @@ const dynamicClickNormalCase = async () => {
   assert.notStrictEqual(result.stepLog[1].strategyUsed, 'navigation-already-occurred', 'the abort-on-navigation guard should not fire when nothing navigated');
 };
 
+// Generic reproduction of the "tried 1 locator candidate(s)" failure mode:
+// the recorded/requested value never appears as visible text on the page at
+// all (site copy changed, different content on this replay, or — as seen in
+// production — the expected content simply never rendered), while the
+// element itself is still uniquely identifiable by its recorded structural
+// selector. Nothing about this scenario names any real site; it only
+// exercises getCandidateList's narrowing + waitForActionableElement's
+// widening.
+const dynamicClickFallbackWhenLiveTextMissing = async () => {
+  const html = `<html><body><div role="listbox"><span class="opt-only" onclick="window.__c='picked'">Nairobi, Kenya</span></div></body></html>`;
+  const result = await runWorkflow({
+    steps: [
+      { index: 0, type: 'navigation', value: encode(html), meta: null },
+      { index: 1, type: 'dynamic_click', selector: '.opt-only', locators: null, value: '{{dest}}', meta: null }
+    ],
+    parameterValues: { dest: 'London, United Kingdom' },
+    workflowId: 'e2e-test-dynamic-click-fallback',
+    extractionHint: null
+  });
+  assert.strictEqual(result.stepLog[1].result, 'success', 'expected the dynamic_click to fall back to its recorded structural selector once the live-value text never appears');
+  assert.strictEqual(result.stepLog[1].strategyUsed, 'css', 'expected the recorded structural candidate, not the live-value text candidate, to be what actually matched');
+};
+
+// Proves the widening in the test above did NOT reopen the historical race
+// it's built to avoid: a stale, already-present, currently-clickable decoy
+// sitting under the same generic structural selector from the moment the
+// page loads, while the REAL (live-value) option only renders after a
+// short delay — exactly what a debounced autocomplete does. The decoy must
+// never win just because the fallback widened; the live-value candidate is
+// checked first every round and must still win once it genuinely appears.
+const dynamicClickRaceSafetyPreserved = async () => {
+  const html = `<html><body>
+<div role="listbox"><span class="opt-only" onclick="window.__c='decoy'">Dhaka, Bangladesh</span></div>
+<script>
+setTimeout(() => {
+  document.querySelector('[role="listbox"]').innerHTML =
+    '<span class="opt-only" onclick="window.__c=\\'picked\\'">London, United Kingdom</span>';
+}, 800);
+</script>
+</body></html>`;
+  const result = await runWorkflow({
+    steps: [
+      { index: 0, type: 'navigation', value: encode(html), meta: null },
+      { index: 1, type: 'dynamic_click', selector: '.opt-only', locators: null, value: '{{dest}}', meta: null }
+    ],
+    parameterValues: { dest: 'London, United Kingdom' },
+    workflowId: 'e2e-test-dynamic-click-race',
+    extractionHint: null
+  });
+  assert.strictEqual(result.stepLog[1].result, 'success', 'expected the dynamic_click to succeed once the real suggestion renders');
+  assert.strictEqual(result.stepLog[1].strategyUsed, 'text', 'expected the LIVE VALUE candidate to win the click, not the structural fallback matching the decoy');
+};
+
 (async () => {
   console.log('Replay engine E2E test suite\n');
 
@@ -218,6 +271,8 @@ const dynamicClickNormalCase = async () => {
   await test('visibility: off-screen "Skip to main content" link is rejected in favor of the real target', skipLinkRejected);
   await test('visibility: hidden duplicate match is rejected in favor of the visible one', hiddenDuplicateRejected);
   await test('dynamic_click: normal case (no race) still succeeds', dynamicClickNormalCase);
+  await test('dynamic_click: falls back to recorded structural selector when live-value text never appears', dynamicClickFallbackWhenLiveTextMissing);
+  await test('dynamic_click: fallback widening does not reopen the stale-decoy race', dynamicClickRaceSafetyPreserved);
 
   const passed = results.filter((r) => r.ok).length;
   const failed = results.filter((r) => !r.ok).length;

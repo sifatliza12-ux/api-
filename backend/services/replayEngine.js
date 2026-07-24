@@ -66,6 +66,19 @@ const MAX_LAZY_SCROLL_ATTEMPTS = 3;
 // its own), and only then escalates to the JS-click fallback if that fails too.
 const MAX_COVERED_RECOVERY_ATTEMPTS = 3;
 
+// Bounds how long a dynamic_click's live-value search is left as the ONLY
+// candidate (see getCandidateList) before waitForActionableElement widens to
+// the step's own recorded structural candidates. A real elapsed-time budget,
+// not a round/attempt count — the loop's per-round cost varies a lot (a fast
+// empty check vs. a lazy-scroll nudge's own ~800ms wait vs. a growing
+// backoff sleep), so counting rounds would make the actual grace period
+// swing with whichever recovery branch happened to fire in between, instead
+// of reliably giving a normal debounced autocomplete (typically well under
+// 2s end to end) room to render before anything else is tried. That's what
+// keeps the original race — a stale structural candidate winning against a
+// suggestion still one round-trip from rendering — from coming back.
+const DYNAMIC_CLICK_FALLBACK_GRACE_MS = 5000;
+
 // ---------------------------------------------------------------------------
 // Blockers: things that sit between the replay and the real target element.
 // Two different kinds need two different responses — a cookie banner or
@@ -517,25 +530,14 @@ const buildRelaxedCandidates = (step) => {
   return relaxed;
 };
 
-const getCandidateList = (step, parameterValues) => {
-  if (step.type === 'dynamic_click' && step.value) {
-    try {
-      const currentValue = substitutePlaceholders(step.value, parameterValues || {});
-      if (currentValue !== null && typeof currentValue !== 'undefined' && String(currentValue).trim()) {
-        // Deliberately the ONLY candidate when a live value is available —
-        // a stale structural/text fallback must never get a chance to win
-        // a race against a suggestion that's still one network round-trip
-        // away from rendering (see the historical "recorded Dhaka, still
-        // selects Dhaka after asking for London" failure this guards
-        // against). waitForActionableElement's own retry loop already
-        // re-runs this same fresh search every round.
-        return [{ strategy: 'text', value: String(currentValue).trim() }];
-      }
-    } catch (error) {
-      // Missing parameter value — fall through to whatever was recorded.
-    }
-  }
-
+// Structural/text candidates derived purely from what was recorded — never
+// parameter- or live-page-aware. This is the ordinary candidate list for
+// every step type except a dynamic_click's initial live-value-only sweep
+// (see getCandidateList), and it doubles as that sweep's fallback once
+// waitForActionableElement decides the live value plausibly isn't rendering
+// at all (see DYNAMIC_CLICK_FALLBACK_AFTER_ATTEMPTS) rather than just being
+// a round or two from it.
+const getStructuralCandidates = (step) => {
   const candidates = [];
   if (Array.isArray(step.locators)) {
     candidates.push(...step.locators);
@@ -545,6 +547,31 @@ const getCandidateList = (step, parameterValues) => {
   }
   candidates.push(...buildRelaxedCandidates(step));
   return candidates;
+};
+
+const getCandidateList = (step, parameterValues) => {
+  if (step.type === 'dynamic_click' && step.value) {
+    try {
+      const currentValue = substitutePlaceholders(step.value, parameterValues || {});
+      if (currentValue !== null && typeof currentValue !== 'undefined' && String(currentValue).trim()) {
+        // Deliberately the ONLY candidate on this first sweep — a stale
+        // structural/text fallback must never get a chance to win a race
+        // against a suggestion that's still one network round-trip away
+        // from rendering (see the historical "recorded Dhaka, still selects
+        // Dhaka after asking for London" failure this guards against).
+        // Falling back to nothing else EVER, though, means a step whose
+        // live value never renders at all — wrong page state, a slower than
+        // usual suggestion, recorded text that just isn't there anymore —
+        // has zero recovery for the rest of its whole timeout budget; see
+        // waitForActionableElement's escalation for the other half of this.
+        return [{ strategy: 'text', value: String(currentValue).trim() }];
+      }
+    } catch (error) {
+      // Missing parameter value — fall through to whatever was recorded.
+    }
+  }
+
+  return getStructuralCandidates(step);
 };
 
 // Identifies whatever element is actually sitting at the target's own
@@ -927,7 +954,14 @@ const findActionableCandidate = async (page, candidates) => {
 // interval, clearing obvious blockers each time it doesn't find a fully
 // actionable element.
 const waitForActionableElement = async (page, step, { timeoutMs, log, parameterValues }) => {
-  const candidates = getCandidateList(step, parameterValues);
+  let candidates = getCandidateList(step, parameterValues);
+  // Only a dynamic_click's live-value sweep is ever narrowed to a single
+  // text candidate (see getCandidateList) — everything else already gets
+  // its full recorded candidate list up front, so there's nothing to widen.
+  const isNarrowedDynamicClick = step.type === 'dynamic_click' && candidates.length === 1 && candidates[0].strategy === 'text';
+  const dynamicClickFallback = isNarrowedDynamicClick ? getStructuralCandidates(step) : [];
+  let dynamicClickFallbackEngaged = false;
+  let emptySince = null;
   const deadline = Date.now() + timeoutMs;
   let attempt = 0;
   let lastReason = 'no candidate locators were recorded for this step';
@@ -954,6 +988,29 @@ const waitForActionableElement = async (page, step, { timeoutMs, log, parameterV
     if (found.diagnostics) {
       lastDiagnostics = found.diagnostics;
     }
+
+    // Widen a narrowed dynamic_click search to its recorded structural
+    // candidates once the live value has matched literally nothing for
+    // DYNAMIC_CLICK_FALLBACK_GRACE_MS of continuous real time — reset the
+    // instant it matches ANYTHING (even something not yet actionable),
+    // since that means the suggestion is genuinely rendering and deserves
+    // the same race-safe patience as before, not an early widen. Appended
+    // (not prepended/replacing), so the live-value candidate keeps first
+    // claim on every subsequent round too — the fallback can only ever win
+    // a round where the live value itself still matches nothing at all.
+    if (dynamicClickFallback.length && !dynamicClickFallbackEngaged) {
+      const matchedNothingThisRound = (found.diagnostics?.matchCount || 0) === 0;
+      if (matchedNothingThisRound) {
+        if (emptySince === null) emptySince = Date.now();
+        if (Date.now() - emptySince >= DYNAMIC_CLICK_FALLBACK_GRACE_MS) {
+          candidates = candidates.concat(dynamicClickFallback);
+          dynamicClickFallbackEngaged = true;
+        }
+      } else {
+        emptySince = null;
+      }
+    }
+
     if (found.bestBlockedLocator) {
       lastBlockedLocator = found.bestBlockedLocator;
       coveredAttempts += 1;
