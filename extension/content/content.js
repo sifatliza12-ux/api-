@@ -1027,13 +1027,26 @@
         return originalTarget;
     };
 
+    // target.closest('#forgeflow-recorder-widget') cannot be used for this:
+    // .closest() cannot cross a shadow-root boundary upward, so once
+    // getStableEventTarget() has (correctly) resolved into the widget's own
+    // open shadow root, a light-DOM .closest() lookup for the host id always
+    // comes back null. event.composedPath() is used instead — the same
+    // shadow-piercing API getStableEventTarget() itself relies on — checked
+    // against the ORIGINAL event, not the resolved target, so it still works
+    // for every element on the path regardless of which one got selected.
+    const isWidgetEvent = (event) => {
+        const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+        return path.some((node) => node instanceof Element && node.id === 'forgeflow-recorder-widget');
+    };
+
     const handleClick = (event) => {
         const target = getStableEventTarget(event);
         if (!(target instanceof Element)) {
             return;
         }
 
-        if (target.closest('#forgeflow-recorder-widget')) {
+        if (isWidgetEvent(event)) {
             return;
         }
 
@@ -1051,7 +1064,7 @@
             return;
         }
 
-        if (target.closest('#forgeflow-recorder-widget')) {
+        if (isWidgetEvent(event)) {
             return;
         }
 
@@ -1074,7 +1087,7 @@
             return;
         }
 
-        if (target.closest('#forgeflow-recorder-widget')) {
+        if (isWidgetEvent(event)) {
             return;
         }
 
@@ -1099,7 +1112,7 @@
             return;
         }
 
-        if (target.closest('#forgeflow-recorder-widget')) {
+        if (isWidgetEvent(event)) {
             return;
         }
 
@@ -1122,7 +1135,7 @@
             return;
         }
 
-        if (target.closest('#forgeflow-recorder-widget')) {
+        if (isWidgetEvent(event)) {
             return;
         }
 
@@ -1139,7 +1152,7 @@
             return;
         }
 
-        if (target.closest('#forgeflow-recorder-widget')) {
+        if (isWidgetEvent(event)) {
             return;
         }
 
@@ -1203,7 +1216,8 @@
         runtime.touchStartInfo = {
             x: touch.clientX,
             y: touch.clientY,
-            target: getStableEventTarget(event)
+            target: getStableEventTarget(event),
+            isWidget: isWidgetEvent(event)
         };
     };
 
@@ -1216,7 +1230,7 @@
         }
 
         const target = startInfo.target;
-        if (!(target instanceof Element) || target.closest('#forgeflow-recorder-widget')) {
+        if (!(target instanceof Element) || startInfo.isWidget) {
             return;
         }
 
