@@ -183,8 +183,30 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${statusLine}${paramsLine}${resultsHtml}${rawToggle}`;
     };
 
+    // Builds the "curl -X POST ... -d '{...}'" example shown in the API
+    // docs section from whatever values are currently in the parameter
+    // form — same values a real caller would need to send.
+    const buildCurlCommand = (fullEndpoint, values) => {
+        const jsonBody = JSON.stringify(values).replace(/'/g, `'\\''`);
+        return `curl -X POST ${fullEndpoint} \\\n  -H "Content-Type: application/json" \\\n  -d '${jsonBody}'`;
+    };
+
+    const copyToClipboard = async (button, text) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            const original = button.textContent;
+            button.textContent = 'Copied!';
+            setTimeout(() => { button.textContent = original; }, 1200);
+        } catch (err) {
+            console.error('[ForgeFlow][my-apis] copy failed', err);
+            alert('Unable to copy to clipboard.');
+        }
+    };
+
     const openApiModal = (api) => {
         const parameters = Array.isArray(api.parameters) ? api.parameters : [];
+        const fullEndpoint = `${API_BASE}${api.endpoint || ''}`;
+        const method = (api.method || 'POST').toUpperCase();
 
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
@@ -197,10 +219,41 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.innerHTML = `
             <h3>${escapeHtml(api.name)}</h3>
             <div class="modal-scroll-body">
-                <p><strong>Endpoint:</strong> ${escapeHtml(api.endpoint)}</p>
-                <p><strong>Method:</strong> ${escapeHtml(api.method)}</p>
-                <p><strong>Version:</strong> ${escapeHtml(api.version || '')}</p>
-                <pre>${escapeHtml(api.generatedCode || '')}</pre>
+                <section class="api-docs">
+                    <h4>API Information</h4>
+                    <table class="api-info-table">
+                        <tbody>
+                            <tr><th>Workflow Name</th><td>${escapeHtml(api.name)}</td></tr>
+                            <tr><th>Workflow ID</th><td>${escapeHtml(api.workflowId != null ? String(api.workflowId) : '—')}</td></tr>
+                            <tr><th>Method</th><td>${escapeHtml(method)}</td></tr>
+                            <tr><th>Version</th><td>${escapeHtml(api.version || '')}</td></tr>
+                            <tr><th>Endpoint</th><td class="endpoint-cell">${escapeHtml(fullEndpoint)}</td></tr>
+                        </tbody>
+                    </table>
+
+                    <h4>Headers</h4>
+                    <pre>Content-Type: application/json</pre>
+
+                    <h4>Example JSON Request</h4>
+                    <pre class="json-request-pre"></pre>
+
+                    <h4>Example cURL Request</h4>
+                    <pre class="curl-request-pre"></pre>
+
+                    <h4>Example Response</h4>
+                    <pre>{
+  "success": true,
+  "workflowId": ${JSON.stringify(api.workflowId != null ? api.workflowId : null)},
+  "status": "running"
+}</pre>
+
+                    <div class="docs-copy-row">
+                        <button type="button" class="btn btn-secondary btn-sm copy-endpoint-doc-btn">Copy Endpoint</button>
+                        <button type="button" class="btn btn-secondary btn-sm copy-json-btn">Copy JSON</button>
+                        <button type="button" class="btn btn-secondary btn-sm copy-curl-btn">Copy cURL</button>
+                    </div>
+                </section>
+
                 ${paramsHtml}
                 <div class="run-result" style="display:none"></div>
             </div>
@@ -215,6 +268,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+        // Keep the JSON/cURL preview in sync with whatever the user is
+        // currently typing into the parameter form, without touching the
+        // form's own read/collect logic (paramForm.js owns that contract).
+        const jsonRequestPre = modal.querySelector('.json-request-pre');
+        const curlRequestPre = modal.querySelector('.curl-request-pre');
+        const refreshDocsPreview = () => {
+            const values = window.ForgeFlowParamForm.collectValues(modal);
+            jsonRequestPre.textContent = JSON.stringify(values, null, 2);
+            curlRequestPre.textContent = buildCurlCommand(fullEndpoint, values);
+        };
+        refreshDocsPreview();
+        modal.addEventListener('input', refreshDocsPreview);
+        modal.addEventListener('change', refreshDocsPreview);
+
+        modal.querySelector('.copy-endpoint-doc-btn').addEventListener('click', (e) => copyToClipboard(e.currentTarget, fullEndpoint));
+        modal.querySelector('.copy-json-btn').addEventListener('click', (e) => copyToClipboard(e.currentTarget, jsonRequestPre.textContent));
+        modal.querySelector('.copy-curl-btn').addEventListener('click', (e) => copyToClipboard(e.currentTarget, curlRequestPre.textContent));
 
         const runBtn = overlay.querySelector('.modal-run-api');
         const resultEl = overlay.querySelector('.run-result');

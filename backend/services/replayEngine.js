@@ -2539,4 +2539,23 @@ const runWorkflow = async ({ steps, parameterValues, workflowId, extractionHint 
 // parameter BEFORE launching a browser, using the exact same parser replay
 // itself will use — a value that fails here would fail identically deep
 // inside performCalendarDateClick, just after wastefully opening a browser.
-module.exports = { runWorkflow, parseTargetDate };
+//
+// locatorFromCandidate/getStructuralCandidates/dismissCommonOverlays/
+// waitForPageStability are additionally exported (V2) so the AI API
+// Creator's browser agent (backend/services/aiBrowserAgent.js, not yet
+// built) can resolve/interact with live elements using the exact same
+// locator philosophy replay itself uses, instead of a second parallel
+// implementation. Deliberately NOT exporting performWithRetry/
+// waitForActionableElement/the diagnostic-log-producing helpers here — those
+// are tightly coupled to runWorkflow's own step/log object shape and don't
+// have an independent contract yet; that coupling should be resolved when an
+// actual caller exists (V2 Phase 2), not speculatively now. runWorkflow's own
+// behavior and signature are unchanged by this export list.
+module.exports = {
+  runWorkflow,
+  parseTargetDate,
+  locatorFromCandidate,
+  getStructuralCandidates,
+  dismissCommonOverlays,
+  waitForPageStability
+};

@@ -30,6 +30,10 @@ const marketplaceRoutes = require('./routes/marketplace');
 const subscriptionRoutes = require('./routes/subscription');
 const myApisRoutes = require('./routes/myApis');
 const workflowRoutes = require('./routes/workflows');
+// V2 AI API Creator (Phase 1: session create/status/follow-up only — no
+// browser automation lives behind this route yet, see
+// controllers/aiCreatorController.js).
+const aiCreatorRoutes = require('./routes/aiCreator');
 const purchaseRequestRoutes = require('./routes/purchaseRequests');
 const walletRoutes = require('./routes/wallet');
 const notificationRoutes = require('./routes/notifications');
@@ -62,6 +66,7 @@ app.use('/marketplace', marketplaceRoutes);
 app.use('/subscription', subscriptionRoutes);
 app.use('/api', myApisRoutes);
 app.use('/api/workflows', workflowRoutes);
+app.use('/api/ai-creator', aiCreatorRoutes);
 
 // Manual-approval marketplace purchase workflow (Purchase Requests + Creator
 // Wallet). A real payment gateway would later plug in at

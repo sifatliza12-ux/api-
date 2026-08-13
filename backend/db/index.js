@@ -175,6 +175,32 @@ db.exec(`
     sample_count INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
   );
+
+  -- One row per AI API Creator chat session (V2). A session tracks a single
+  -- natural-language-to-workflow generation attempt from the initial command
+  -- through confirmation, independent of the request/response cycle that
+  -- created it — generation involves multiple LLM round-trips and real page
+  -- navigations, so it outlives any single HTTP request (see
+  -- aiCreationSessionStore.js). status is the state machine driving the chat
+  -- UI's progress messages:
+  --   created -> parsing -> awaiting_confirmation -> generating -> testing
+  --   -> completed
+  --                                                -> failed
+  --   (any state)                                  -> cancelled
+  -- generated_workflow_id is null until a generation attempt actually
+  -- produces a saved workflow (see workflowStore.saveWorkflow); ON DELETE
+  -- SET NULL rather than CASCADE because deleting the resulting workflow/My
+  -- API later should not erase the session's own chat history.
+  CREATE TABLE IF NOT EXISTS ai_creation_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id INTEGER NOT NULL REFERENCES users(id),
+    status TEXT NOT NULL DEFAULT 'created',
+    nl_command TEXT NOT NULL,
+    chat_messages TEXT NOT NULL DEFAULT '[]',
+    generated_workflow_id INTEGER REFERENCES workflows(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
 `);
 
 // Schema evolution for databases created before this column existed —
