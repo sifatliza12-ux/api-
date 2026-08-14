@@ -24,6 +24,7 @@ const anthropicClient = require('../services/anthropicClient');
 const sessionStore = require('../services/aiCreationSessionStore');
 const browserAgent = require('../services/aiBrowserAgent');
 const workflowStore = require('../services/workflowStore');
+const myApisStore = require('../services/myApisStore');
 const { createSession, getSession, addMessage, generateWorkflow } = require('../controllers/aiCreatorController');
 
 const results = [];
@@ -73,6 +74,7 @@ const run = async () => {
   });
   const createdSessionIds = [];
   const createdWorkflowIds = [];
+  const createdMyApiIds = [];
 
   // 8. Session creation.
   await test('POST /sessions creates a session and returns the parsed intent (201, awaiting_confirmation)', async () => {
@@ -270,8 +272,12 @@ const run = async () => {
     assert.strictEqual(res.body.success, true);
     assert.strictEqual(res.body.status, 'completed');
     assert.ok(res.body.workflowId);
+    assert.ok(res.body.myApiId, 'expected a My APIs record id in the response');
+    assert.strictEqual(res.body.endpoint, `/api/workflows/${res.body.workflowId}/run`);
+    assert.strictEqual(res.body.method, 'POST');
     assert.strictEqual(res.body.stepCount, 2);
     createdWorkflowIds.push(res.body.workflowId);
+    createdMyApiIds.push(res.body.myApiId);
 
     const stored = sessionStore.getById(sessionId);
     assert.strictEqual(stored.status, 'completed');
@@ -282,6 +288,19 @@ const run = async () => {
     assert.strictEqual(workflow.visibility, 'private');
     assert.strictEqual(workflow.steps.length, 2);
     assert.strictEqual(workflow.steps[0].type, 'input');
+    assert.strictEqual(workflow.parameters.length, 1, 'expected the confirmed intent parameters to be saved onto the workflow');
+    assert.strictEqual(workflow.parameters[0].name, 'origin');
+
+    // The part the existing "My APIs"/Run/Publish UI actually reads from —
+    // proves generateWorkflow mirrors into myApisStore exactly like the
+    // manual-recorder path (workflowController.parameterize) does.
+    const myApi = myApisStore.getById(res.body.myApiId);
+    assert.ok(myApi, 'expected a my_apis row to exist for the generated workflow');
+    assert.strictEqual(myApi.ownerId, user.id);
+    assert.strictEqual(myApi.workflowId, res.body.workflowId);
+    assert.strictEqual(myApi.endpoint, `/api/workflows/${res.body.workflowId}/run`);
+    assert.strictEqual(myApi.published, false);
+    assert.strictEqual(myApi.parameters.length, 1);
   });
 
   await test('POST /sessions/:id/generate marks the session failed (422) when the agent stops without finishing', async () => {
@@ -351,6 +370,7 @@ const run = async () => {
 
   // Cleanup.
   anthropicClient.getClient = originalGetClient;
+  createdMyApiIds.forEach((id) => myApisStore.deleteById(id));
   createdWorkflowIds.forEach((id) => workflowStore.deleteWorkflow(id));
   createdSessionIds.forEach((id) => sessionStore.deleteById(id));
   db.prepare('DELETE FROM users WHERE id = ?').run(user.id);

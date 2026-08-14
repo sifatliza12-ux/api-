@@ -28,6 +28,7 @@
     const CREATOR_NAV_ITEMS = [
         { key: 'dashboard', label: 'Dashboard', icon: '🏠', path: 'dashboard/creator-dashboard.html' },
         { key: 'record', label: 'Record Workflow', icon: '⏺', path: 'dashboard/creator-dashboard.html#record-banner' },
+        { key: 'ai-creator', label: 'AI Creator', icon: '🤖', path: 'ai-creator/ai-creator.html' },
         { key: 'my-apis', label: 'My APIs', icon: '✦', path: 'my-apis/my-apis.html' },
         { key: 'published-apis', label: 'Published APIs', icon: '📦', path: 'my-apis/my-apis.html?filter=published' },
         { key: 'analytics', label: 'Analytics', icon: '📊', path: 'analytics/analytics.html' },
@@ -51,6 +52,7 @@
     // per-mode dashboard to link to isn't known yet.
     const ALL_ITEMS = [
         { key: 'dashboard', label: 'Dashboard', icon: '🏠', path: 'mode-select/mode-select.html' },
+        { key: 'ai-creator', label: 'AI Creator', icon: '🤖', path: 'ai-creator/ai-creator.html' },
         { key: 'marketplace', label: 'Marketplace', icon: '◫', path: 'marketplace/marketplace.html' },
         { key: 'purchased-apis', label: 'Purchased APIs', icon: '🛒', path: 'purchased-apis/purchased-apis.html' },
         { key: 'purchase-history', label: 'Purchase History', icon: '🧾', path: 'my-purchases/my-purchases.html' },

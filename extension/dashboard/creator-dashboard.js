@@ -110,6 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const pendingRequestsList = document.getElementById('pending-requests-list');
     const recentSalesList = document.getElementById('recent-sales-list');
 
+    const qaAiCreator = document.getElementById('qa-ai-creator');
     const qaPublishApi = document.getElementById('qa-publish-api');
     const qaManageApis = document.getElementById('qa-manage-apis');
     const qaOpenAnalytics = document.getElementById('qa-open-analytics');
@@ -124,6 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ? chrome.runtime.getURL(path)
         : '#';
 
+    if (qaAiCreator) qaAiCreator.href = url('ai-creator/ai-creator.html');
     if (qaPublishApi) qaPublishApi.href = url('my-apis/my-apis.html');
     if (qaManageApis) qaManageApis.href = url('my-apis/my-apis.html');
     if (qaOpenAnalytics) qaOpenAnalytics.href = url('analytics/analytics.html');
