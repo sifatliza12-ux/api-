@@ -1,5 +1,5 @@
 const express = require('express');
-const { createSession, getSession, addMessage } = require('../controllers/aiCreatorController');
+const { createSession, getSession, addMessage, generateWorkflow } = require('../controllers/aiCreatorController');
 const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
@@ -9,5 +9,6 @@ const router = express.Router();
 router.post('/sessions', requireAuth, createSession);
 router.get('/sessions/:id', requireAuth, getSession);
 router.post('/sessions/:id/messages', requireAuth, addMessage);
+router.post('/sessions/:id/generate', requireAuth, generateWorkflow);
 
 module.exports = router;

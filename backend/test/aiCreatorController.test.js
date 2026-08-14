@@ -22,7 +22,9 @@ const db = require('../db');
 const User = require('../models/User');
 const anthropicClient = require('../services/anthropicClient');
 const sessionStore = require('../services/aiCreationSessionStore');
-const { createSession, getSession, addMessage } = require('../controllers/aiCreatorController');
+const browserAgent = require('../services/aiBrowserAgent');
+const workflowStore = require('../services/workflowStore');
+const { createSession, getSession, addMessage, generateWorkflow } = require('../controllers/aiCreatorController');
 
 const results = [];
 const test = async (name, fn) => {
@@ -70,6 +72,7 @@ const run = async () => {
     name: 'Other User'
   });
   const createdSessionIds = [];
+  const createdWorkflowIds = [];
 
   // 8. Session creation.
   await test('POST /sessions creates a session and returns the parsed intent (201, awaiting_confirmation)', async () => {
@@ -226,8 +229,129 @@ const run = async () => {
     assert.strictEqual(msgRes.statusCode, 404);
   });
 
+  // Phase 2: browser-agent generation. browserAgent.runBrowserAgent is
+  // mocked (same monkey-patch technique as anthropicClient.getClient above)
+  // so these tests never launch a real browser or touch a real AI
+  // provider — aiBrowserAgent.js's own loop logic is covered separately by
+  // test/aiBrowserAgent.test.js. This suite only proves the controller
+  // wires session status, workflow persistence, and error handling
+  // correctly around whatever the agent returns.
+  const originalRunBrowserAgent = browserAgent.runBrowserAgent;
+
+  const createConfirmedSession = async (command, intent) => {
+    mockIntentResponse(intent);
+    const req = { body: { command }, user };
+    const res = makeRes();
+    await createSession(req, res);
+    createdSessionIds.push(res.body.sessionId);
+    return res.body.sessionId;
+  };
+
+  await test('POST /sessions/:id/generate saves a workflow and completes the session on success', async () => {
+    const sessionId = await createConfirmedSession('Create an API to search for flights from Dhaka to Dubai.', {
+      targetSite: { name: 'FlightRadar24', url: 'https://www.flightradar24.com', confidence: 0.9 },
+      task: 'Search for flights',
+      parameters: [{ name: 'origin', type: 'text', value: 'Dhaka', label: 'Origin' }]
+    });
+
+    const agentSteps = [
+      { type: 'input', value: 'Dhaka', locators: [{ strategy: 'css', value: '#origin' }], meta: { tag: 'input' } },
+      { type: 'click', value: null, locators: [{ strategy: 'css', value: '#search-btn' }], meta: { tag: 'button' } }
+    ];
+    browserAgent.runBrowserAgent = async () => ({
+      success: true, steps: agentSteps, history: [], finalUrl: 'https://www.flightradar24.com/results', finalTitle: 'Results'
+    });
+
+    const req = { params: { id: sessionId }, user };
+    const res = makeRes();
+    await generateWorkflow(req, res);
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.success, true);
+    assert.strictEqual(res.body.status, 'completed');
+    assert.ok(res.body.workflowId);
+    assert.strictEqual(res.body.stepCount, 2);
+    createdWorkflowIds.push(res.body.workflowId);
+
+    const stored = sessionStore.getById(sessionId);
+    assert.strictEqual(stored.status, 'completed');
+    assert.strictEqual(stored.generatedWorkflowId, res.body.workflowId);
+
+    const workflow = workflowStore.getWorkflow(res.body.workflowId);
+    assert.strictEqual(workflow.ownerId, user.id);
+    assert.strictEqual(workflow.visibility, 'private');
+    assert.strictEqual(workflow.steps.length, 2);
+    assert.strictEqual(workflow.steps[0].type, 'input');
+  });
+
+  await test('POST /sessions/:id/generate marks the session failed (422) when the agent stops without finishing', async () => {
+    const sessionId = await createConfirmedSession('Create an API to do something the agent gives up on.', {
+      targetSite: { name: 'Example', confidence: 0.5 }, task: 'Do X', parameters: []
+    });
+
+    browserAgent.runBrowserAgent = async () => ({
+      success: false, stopped: true, stopReason: 'login_wall', message: 'This page requires logging in.', steps: [], history: []
+    });
+
+    const req = { params: { id: sessionId }, user };
+    const res = makeRes();
+    await generateWorkflow(req, res);
+
+    assert.strictEqual(res.statusCode, 422);
+    assert.strictEqual(res.body.success, false);
+    assert.strictEqual(res.body.status, 'failed');
+    assert.strictEqual(res.body.agentResult.stopReason, 'login_wall');
+
+    const stored = sessionStore.getById(sessionId);
+    assert.strictEqual(stored.generatedWorkflowId, null, 'no workflow should be saved on a failed run');
+  });
+
+  await test('POST /sessions/:id/generate marks the session failed (500) when the agent throws', async () => {
+    const sessionId = await createConfirmedSession('Create an API that will error out.', {
+      targetSite: { name: 'Example', confidence: 0.5 }, task: 'Do X', parameters: []
+    });
+
+    browserAgent.runBrowserAgent = async () => { throw new Error('Playwright crashed'); };
+
+    const req = { params: { id: sessionId }, user };
+    const res = makeRes();
+    await generateWorkflow(req, res);
+
+    assert.strictEqual(res.statusCode, 500);
+    assert.strictEqual(res.body.success, false);
+    assert.strictEqual(res.body.status, 'failed');
+  });
+
+  await test('POST /sessions/:id/generate rejects a session that is not awaiting_confirmation (409)', async () => {
+    const sessionId = await createConfirmedSession('Create an API to do Y.', {
+      targetSite: { name: 'Example', confidence: 0.5 }, task: 'Do Y', parameters: []
+    });
+    sessionStore.setStatus(sessionId, 'completed');
+
+    const req = { params: { id: sessionId }, user };
+    const res = makeRes();
+    await generateWorkflow(req, res);
+
+    assert.strictEqual(res.statusCode, 409);
+  });
+
+  await test('POST /sessions/:id/generate returns 404 for another user\'s session', async () => {
+    const sessionId = await createConfirmedSession('Create an API to do Z.', {
+      targetSite: { name: 'Example', confidence: 0.5 }, task: 'Do Z', parameters: []
+    });
+
+    const req = { params: { id: sessionId }, user: otherUser };
+    const res = makeRes();
+    await generateWorkflow(req, res);
+
+    assert.strictEqual(res.statusCode, 404);
+  });
+
+  browserAgent.runBrowserAgent = originalRunBrowserAgent;
+
   // Cleanup.
   anthropicClient.getClient = originalGetClient;
+  createdWorkflowIds.forEach((id) => workflowStore.deleteWorkflow(id));
   createdSessionIds.forEach((id) => sessionStore.deleteById(id));
   db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
   db.prepare('DELETE FROM users WHERE id = ?').run(otherUser.id);
