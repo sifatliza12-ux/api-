@@ -86,16 +86,23 @@ const run = async () => {
       assert.strictEqual(decide.calls, 3);
       assert.strictEqual(result.steps.length, 2);
 
+      // steps are RAW RECORDED EVENTS (ruleBasedParameterizer.js's input
+      // shape), not replay-ready steps — see aiBrowserAgent.js's doc
+      // comment. selector/meta.fieldContext are what let the parameterizer
+      // name a real {{placeholder}}.
       assert.strictEqual(result.steps[0].type, 'input');
       assert.strictEqual(result.steps[0].value, 'hello');
       assert.ok(Array.isArray(result.steps[0].locators) && result.steps[0].locators.length, 'input step should carry locator candidates');
+      assert.ok(result.steps[0].selector, 'input event should carry a single CSS selector string');
+      assert.strictEqual(result.steps[0].meta.fieldContext.label, 'Query', 'field label should flow through into meta.fieldContext for parameter naming');
 
       assert.strictEqual(result.steps[1].type, 'click');
+      assert.strictEqual(result.steps[1].value, 'Search', "a click event's value should be the clicked element's own text");
       assert.strictEqual(result.history.length, 3);
     });
   });
 
-  await test('records a navigation action as a plain {type: "navigation", value} step', async () => {
+  await test('records a navigation action as a raw navigation event (type/value/url, no selector)', async () => {
     await withPage(FORM_HTML, async () => {
       const target = encode('<html><body><p>landed</p></body></html>');
       const decide = scriptedDecide([
@@ -106,7 +113,10 @@ const run = async () => {
       const result = await runBrowserAgent({ intent: { task: 'Go somewhere', targetSite: {} }, page, decideNextAction: decide });
 
       assert.strictEqual(result.success, true);
-      assert.deepStrictEqual(result.steps[0], { type: 'navigation', value: target });
+      assert.strictEqual(result.steps[0].type, 'navigation');
+      assert.strictEqual(result.steps[0].value, target);
+      assert.strictEqual(result.steps[0].url, target, 'ruleBasedParameterizer reads event.url for navigation linking');
+      assert.strictEqual(result.steps[0].selector, null);
       assert.strictEqual(result.finalUrl, target);
     });
   });

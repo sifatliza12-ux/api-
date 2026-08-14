@@ -2,20 +2,30 @@
 // pageSnapshotBuilder.js both already name as their intended caller. Drives
 // a live Playwright page toward a confirmed intent by repeatedly asking the
 // active AIProvider's decideNextAction "what's the single next action?",
-// executing it, and recording it as a workflow step — until the model
-// reports "done" (success), "stop" (model gave up), or maxSteps is reached.
+// executing it, and recording it — until the model reports "done" (success),
+// "stop" (model gave up), or maxSteps is reached.
 //
-// Deliberately NOT a rewrite of replayEngine.js: this reuses its four
-// exported helpers (locatorFromCandidate, dismissCommonOverlays,
-// waitForPageStability, getStructuralCandidates isn't needed here) instead
-// of reimplementing element resolution, and produces steps in exactly the
-// shape runWorkflow already consumes — the resulting workflow is replayed
-// by the existing engine unchanged, not by any code in this file. The
-// retry/recovery machinery inside runWorkflow (performWithRetry etc.) isn't
-// reused because it isn't exported (see replayEngine.js's own comment on
-// why) and isn't needed here anyway: a live agent re-observes the real page
-// every single step via a fresh snapshot, so it doesn't need blind retries
-// against a possibly-stale element the way replaying a recorded step does.
+// Deliberately NOT a rewrite of replayEngine.js: this reuses its exported
+// helpers (locatorFromCandidate, dismissCommonOverlays, waitForPageStability)
+// instead of reimplementing element resolution. The retry/recovery machinery
+// inside runWorkflow (performWithRetry etc.) isn't reused because it isn't
+// exported (see replayEngine.js's own comment on why) and isn't needed here
+// anyway: a live agent re-observes the real page every single step via a
+// fresh snapshot, so it doesn't need blind retries against a possibly-stale
+// element the way replaying a recorded step does.
+//
+// V2 Phase 4: `steps` in this module's return value are RAW RECORDED EVENTS
+// (the same {type, value, selector, locators, meta, url, ...} shape
+// extension/content/content.js's manual recorder produces), NOT already
+// replay-ready — the caller (aiCreatorController.generateWorkflow) is
+// expected to run them through the EXISTING
+// ruleBasedParameterizer.parameterizeWorkflowRuleBased(events), exactly like
+// workflowController.parameterize already does for a human recording, so an
+// AI-generated workflow gets real {{placeholder}} substitution through the
+// same, single, unmodified parameterization/replay pipeline — not a second
+// one. This file deliberately does not know what a "parameter" is; it only
+// knows how to describe what it did on the live page in the recorder's
+// vocabulary.
 const { chromium } = require('playwright');
 const { buildPageSnapshot } = require('./pageSnapshotBuilder');
 const { detectPageBlock } = require('./antiBotDetector');
@@ -107,29 +117,86 @@ const executeAction = async (page, snapshot, action) => {
   await dismissCommonOverlays(page).catch(() => null);
 };
 
-// Converts one executed action into a step in exactly the shape
-// replayEngine.runWorkflow's `switch (step.type)` consumes (see that file's
-// 'navigation'/'click'/'input'/'change'/'keydown' cases), so the workflow
-// this produces is replayable by the existing engine completely unchanged.
-// calendar_date is recorded as a plain 'click' on the same resolved element
-// — replaying the literal day cell the agent found beats reinvoking
-// runWorkflow's month-navigation search logic (performCalendarDateClick),
-// which exists to relocate a date BLIND from a recorded selector; this step
-// already carries the live element's own locators, so that search has
-// nothing to add.
-const actionToWorkflowStep = (action, snapshot) => {
+// Picks the single CSS-string `selector` ruleBasedParameterizer.js reads
+// (deriveBaseNameFromSelector, inferType's date check, dedupeFieldParameters's
+// duplicate-grouping key all key off this exact field, distinct from the
+// `locators` array) — pageSnapshotBuilder.js guarantees every element has at
+// least one strategy:'css' locator (testid/id/name/placeholder, or a
+// structural fallback), so this is never left null for a resolved element.
+const deriveSelector = (locators) => (locators || []).find((loc) => loc.strategy === 'css')?.value || null;
+
+// Builds the event.meta.fieldContext object ruleBasedParameterizer.js's
+// pickNameSource() reads (in priority order: label, ariaLabel, placeholder,
+// name, nearbyText) to name a parameter well. The live snapshot doesn't
+// carry a DOM `name` ATTRIBUTE or "nearby text" the way a real recording's
+// content.js capture does (see pageSnapshotBuilder.js), so those two stay
+// null — pickNameSource simply falls through to the next candidate, same as
+// it already does for a real recording missing one of these. `ariaLabel`
+// uses the snapshot's `name` (its accessible-name amalgam: aria-label ||
+// aria-labelledby || label text || visible text || value) as the closest
+// available proxy — an imperfect but reasonable stand-in, not a fabrication
+// of data that isn't there.
+const buildFieldContext = (element) => ({
+  label: element?.label || null,
+  ariaLabel: element?.name || null,
+  placeholder: element?.placeholder || null,
+  name: null,
+  nearbyText: null
+});
+
+// Converts one executed action into a RAW RECORDED EVENT — the same shape
+// extension/content/content.js's manual recorder produces and
+// ruleBasedParameterizer.parameterizeWorkflowRuleBased(events) expects as
+// input (see that module's pickNameSource/condenseEvents) — NOT an
+// already-parameterized replay-ready step. The caller runs the full
+// sequence through that existing function to get real {{placeholder}}
+// steps + a matching parameters array, exactly like a human recording.
+//
+// calendar_date is recorded as a plain 'click' event, matching how a HUMAN
+// calendar interaction is recorded too: content.js never emits a
+// 'calendar_date' event itself — parameterizeWorkflowRuleBased's own
+// classifyDynamicClick/buildDynamicClickUpgrade is what upgrades a
+// plain click into a calendar_date STEP, based on the page structure around
+// it. Feeding a plain click here lets that existing, unmodified
+// classification logic decide, identically to a human recording.
+//
+// A click's `value` is the clicked element's own visible/accessible text
+// (matching content.js's convention — see replayEngine.js's
+// buildRelaxedCandidates comment on valueIsElementText), not null: both
+// classifyDynamicClick's heuristics and replay's own relaxed-candidate
+// fallback search depend on it being real text, not a placeholder.
+const actionToRecordedEvent = (action, snapshot) => {
+  const url = snapshot?.url || null;
+  const pageTitle = snapshot?.title || null;
+  const timestamp = new Date().toISOString();
+
   if (action.action === 'navigation') {
-    return { type: 'navigation', value: action.value };
+    return { type: 'navigation', value: action.value, url: action.value, selector: null, locators: null, meta: null, pageTitle, timestamp };
   }
 
   const element = (snapshot.elements || []).find((el) => el.ref === action.ref);
-  const type = action.action === 'calendar_date' ? 'click' : action.action;
-  return {
-    type,
-    value: action.value ?? null,
-    locators: element?.locators || [],
-    meta: { tag: element?.tag || null }
-  };
+  const locators = element?.locators || null;
+  const selector = deriveSelector(locators);
+
+  if (action.action === 'input' || action.action === 'change') {
+    return {
+      type: action.action,
+      value: action.value ?? '',
+      selector,
+      locators,
+      meta: { fieldContext: buildFieldContext(element) },
+      url,
+      pageTitle,
+      timestamp
+    };
+  }
+
+  if (action.action === 'keydown') {
+    return { type: 'keydown', value: action.value || 'Enter', selector, locators, meta: null, url, pageTitle, timestamp };
+  }
+
+  // click, calendar_date
+  return { type: 'click', value: element?.name || null, selector, locators, meta: null, url, pageTitle, timestamp };
 };
 
 // Runs the agent loop to completion (done/stop/blocked/maxSteps) and
@@ -164,15 +231,25 @@ const runBrowserAgent = async ({ intent, maxSteps = DEFAULT_MAX_STEPS, page: inj
       page = await context.newPage();
     }
 
+    const history = [];
+    // Raw recorded events (see actionToRecordedEvent) — meant to be fed
+    // through ruleBasedParameterizer.parameterizeWorkflowRuleBased by the
+    // caller, not replayed directly.
+    const steps = [];
+
+    // The initial navigation to the confirmed target site MUST itself be
+    // the first recorded event — exactly like a human recording always
+    // starts with one (see content.js). Without this, a replay of the
+    // saved workflow would start from about:blank and every subsequent
+    // step would fail to find anything, since only ACTIONS TAKEN INSIDE
+    // the decision loop were ever being recorded before.
     const startUrl = intent.targetSite?.url;
     if (startUrl) {
       await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: ACTION_TIMEOUT_MS });
       await waitForPageStability(page, 3000);
       await dismissCommonOverlays(page).catch(() => null);
+      steps.push({ type: 'navigation', value: startUrl, url: startUrl, selector: null, locators: null, meta: null, pageTitle: await page.title().catch(() => null), timestamp: new Date().toISOString() });
     }
-
-    const history = [];
-    const steps = [];
     const finalInfo = async (extra) => ({
       steps,
       history,
@@ -199,7 +276,7 @@ const runBrowserAgent = async ({ intent, maxSteps = DEFAULT_MAX_STEPS, page: inj
       }
 
       await executeAction(page, snapshot, action);
-      steps.push(actionToWorkflowStep(action, snapshot));
+      steps.push(actionToRecordedEvent(action, snapshot));
     }
 
     return finalInfo({ success: false, stopped: true, stopReason: 'max_steps_exceeded', message: `Stopped after ${maxSteps} steps without the task being marked done.` });

@@ -256,9 +256,22 @@ const run = async () => {
       parameters: [{ name: 'origin', type: 'text', value: 'Dhaka', label: 'Origin' }]
     });
 
+    // Raw recorded events (aiBrowserAgent.js's actual output shape) — fed
+    // through the real, unmodified parameterizeWorkflowRuleBased inside
+    // generateWorkflow, so this proves the real pipeline produces a real
+    // {{placeholder}}, not a mocked/fabricated one.
     const agentSteps = [
-      { type: 'input', value: 'Dhaka', locators: [{ strategy: 'css', value: '#origin' }], meta: { tag: 'input' } },
-      { type: 'click', value: null, locators: [{ strategy: 'css', value: '#search-btn' }], meta: { tag: 'button' } }
+      {
+        type: 'input', value: 'Dhaka', selector: '#origin',
+        locators: [{ strategy: 'css', value: '#origin' }],
+        meta: { fieldContext: { label: 'Origin', ariaLabel: null, placeholder: null, name: null, nearbyText: null } },
+        url: 'https://www.flightradar24.com', pageTitle: 'FlightRadar24', timestamp: new Date().toISOString()
+      },
+      {
+        type: 'click', value: 'Search', selector: '#search-btn',
+        locators: [{ strategy: 'css', value: '#search-btn' }], meta: null,
+        url: 'https://www.flightradar24.com', pageTitle: 'FlightRadar24', timestamp: new Date().toISOString()
+      }
     ];
     browserAgent.runBrowserAgent = async () => ({
       success: true, steps: agentSteps, history: [], finalUrl: 'https://www.flightradar24.com/results', finalTitle: 'Results'
@@ -288,8 +301,14 @@ const run = async () => {
     assert.strictEqual(workflow.visibility, 'private');
     assert.strictEqual(workflow.steps.length, 2);
     assert.strictEqual(workflow.steps[0].type, 'input');
-    assert.strictEqual(workflow.parameters.length, 1, 'expected the confirmed intent parameters to be saved onto the workflow');
+    // Proves the REAL, unmodified ruleBasedParameterizer ran on the agent's
+    // recorded events (not the AI's stated intent.parameters): the field's
+    // recorded label ("Origin") becomes both a real {{origin}} placeholder
+    // in the saved step AND a matching workflow.parameters entry.
+    assert.strictEqual(workflow.steps[0].value, '{{origin}}', 'the recorded literal value must be replaced with a real placeholder');
+    assert.strictEqual(workflow.parameters.length, 1);
     assert.strictEqual(workflow.parameters[0].name, 'origin');
+    assert.strictEqual(workflow.parameters[0].defaultValue, 'Dhaka', 'the value typed during generation should be preserved as the default');
 
     // The part the existing "My APIs"/Run/Publish UI actually reads from —
     // proves generateWorkflow mirrors into myApisStore exactly like the
