@@ -393,6 +393,35 @@ const run = async () => {
     });
   });
 
+  await test('a task-only request (no named site) skips the site-confirmation gate and offers Generate directly', async () => {
+    // The parser's task-only shape: empty target name + low confidence.
+    const TASK_ONLY_INTENT = {
+      targetSite: { name: '', url: null, confidence: 0, needsConfirmation: true },
+      task: "Find hotels in Cox's Bazar under 5000 taka",
+      parameters: [
+        { name: 'city', type: 'text', value: "Cox's Bazar", label: 'City' },
+        { name: 'max_price', type: 'number', value: '5000', label: 'Max price' }
+      ]
+    };
+    const session = makeSession({ intent: TASK_ONLY_INTENT });
+    const matchers = [{ test: (url, m) => url.endsWith('/api/ai-creator/sessions') && m === 'POST', respond: (route) => fulfillJson(route, 201, { success: true, ...session }) }];
+
+    await withPage({ matchers }, async (page) => {
+      await page.fill('#ai-input', "Find hotels in Cox's Bazar under 5000 taka");
+      await page.click('#send-btn');
+      await page.waitForSelector('#confirm-area:not([hidden])');
+
+      // No "is this the right site?" gate for a task-only request — discovery finds + verifies it during generation.
+      assert.strictEqual(await page.isVisible('.ai-site-warning'), false, 'a task-only request must NOT ask the user to confirm a site');
+      assert.strictEqual(await page.locator('#confirm-site-btn').count(), 0, 'no site-confirmation button for a task-only request');
+      // Generate is offered directly.
+      assert.ok(await page.isVisible('#generate-btn'), 'Generate must be available immediately for a task-only request');
+      // The target is no longer reported as "Not identified".
+      const confirmText = await page.textContent('#confirm-area');
+      assert.ok(!/not identified/i.test(confirmText), 'the target must not be reported as "not identified"');
+    });
+  });
+
   await test('a follow-up message calls POST /api/ai-creator/sessions/:id/messages, not a new session', async () => {
     const initialSession = makeSession({ sessionId: 42, intent: FLIGHT_INTENT });
     const correctedIntent = { ...FLIGHT_INTENT, parameters: [{ ...FLIGHT_INTENT.parameters[0], value: 'Chittagong' }, FLIGHT_INTENT.parameters[1]] };

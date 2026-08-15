@@ -209,7 +209,14 @@ function renderConfirmArea() {
         return;
     }
 
-    const needsSiteConfirm = Boolean(intent.targetSite?.needsConfirmation) && !siteConfirmed;
+    // The "is this the right site?" gate only makes sense when a specific site
+    // was actually identified to confirm. For a task-only request (the user
+    // named no site, so the target is empty), there is nothing to confirm —
+    // discovery finds AND verifies the site during generation — so we skip the
+    // gate and let the user proceed straight to Generate. A named-but-uncertain
+    // site still gets the gate (its safety/confirmation behavior is unchanged).
+    const hasNamedSite = Boolean((intent.targetSite?.name || '').trim());
+    const needsSiteConfirm = hasNamedSite && Boolean(intent.targetSite?.needsConfirmation) && !siteConfirmed;
 
     const parameters = Array.isArray(intent.parameters) ? intent.parameters : [];
     const paramsHtml = parameters.length
@@ -224,7 +231,7 @@ function renderConfirmArea() {
     confirmArea.innerHTML = `
         <div class="ai-confirm-card">
             <p class="ai-confirm-heading">Here's what ForgeFlow understood:</p>
-            <div class="ai-confirm-row"><span class="ai-confirm-row-label">Target</span><span class="ai-confirm-row-value">${escapeHtml(intent.targetSite?.name || 'Not identified')}</span></div>
+            <div class="ai-confirm-row"><span class="ai-confirm-row-label">Target</span><span class="ai-confirm-row-value">${escapeHtml(intent.targetSite?.name || 'ForgeFlow will find the best matching site')}</span></div>
             <div class="ai-confirm-row"><span class="ai-confirm-row-label">Task</span><span class="ai-confirm-row-value">${escapeHtml(intent.task || '—')}</span></div>
             <div class="ai-confirm-params">
                 <span class="ai-confirm-row-label">Parameters</span>

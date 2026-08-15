@@ -134,6 +134,43 @@ const run = async () => {
     assertExtractedRecords(agentResult, 'novel');
   });
 
+  // REGRESSION: the task-only path (the user named NO site at all —
+  // targetSite.name is empty, needsConfirmation true — e.g. "Find hotels in
+  // Cox's Bazar under 5000 taka") previously had no coverage through the
+  // REAL discovery pipeline at all, only through an injected `discover`
+  // stub (see aiBrowserAgent.test.js). This runs the same real
+  // ranking-plus-live-verification-plus-navigation-plus-interaction-plus-
+  // extraction pipeline as the named-target journeys above, but from a
+  // task-only intent, proving aiBrowserAgent.js's task-only fallback
+  // (targetName empty -> the TASK becomes the discovery query,
+  // autoSelectBest) actually reaches and interacts with a real resolved
+  // site end to end, not just that an injected discover() stub is wired up
+  // correctly.
+  const discoverForTaskOnly = (baseUrl) => async (args) => siteDiscovery.discoverTargetSite({
+    ...args,
+    searchResults: async () => [{ url: `${baseUrl}/`, title: 'Search results' }],
+    minConfidence: 0.1
+  });
+
+  await test('end-to-end REGRESSION: a task-only intent (no named site) -> discovery auto-selects + REALLY verifies -> navigation -> interaction -> extraction', async () => {
+    const { server, baseUrl } = await startListingServer({ siteName: 'ApplianceBarn' });
+    const page = await (await browser.newContext()).newPage();
+    const query = 'microwave';
+    try {
+      const agentResult = await runBrowserAgent({
+        // Empty name + needsConfirmation:true is the parser's task-only shape.
+        intent: { task: 'search the catalog for a microwave', targetSite: { name: '', url: null, needsConfirmation: true } },
+        page,
+        decideNextAction: scriptedSearch(query),
+        discoverTargetSite: discoverForTaskOnly(baseUrl)
+      });
+      assertExtractedRecords(agentResult, query);
+    } finally {
+      await page.context().close().catch(() => {});
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
   await browser.close();
 
   const failed = results.filter((r) => !r.ok);

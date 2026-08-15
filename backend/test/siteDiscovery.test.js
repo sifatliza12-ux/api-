@@ -16,7 +16,8 @@ const {
   rankCandidates,
   verifyDestination,
   tokenizeName,
-  registrableLabel
+  registrableLabel,
+  buildSearchQuery
 } = require('../services/siteDiscovery');
 
 const results = [];
@@ -320,6 +321,69 @@ const run = async () => {
     });
     assert.strictEqual(res.ok, false);
     assert.ok(/did not mention/i.test(res.reason));
+  });
+
+  // --- REGRESSION: the default search query carries the TASK, not just the
+  // bare name ---------------------------------------------------------------
+  // Root cause found while tracing a live "Use the Walton website to search
+  // for microwave" demo failure: a plain search for "Walton" surfaces an
+  // unrelated US land-investment company (walton.com) ahead of the intended
+  // Bangladeshi electronics maker — and walton.com then legitimately
+  // VERIFIES (same host, the live page genuinely says "Walton"), so
+  // discovery confidently resolves to a real, but wrong, site, and the agent
+  // correctly reports it can't find a search field there. `task` was already
+  // threaded through discoverTargetSite -> searchResults(name, {page, task})
+  // but the default search implementation never read it — these tests
+  // exercise the REAL (unstubbed) default search against a fake `page` that
+  // only records the URL it was asked to load, so no network is touched.
+
+  await test('buildSearchQuery appends the task to the name when they differ, and never duplicates a task-only query', () => {
+    assert.strictEqual(buildSearchQuery('Walton', 'search for microwave'), 'Walton search for microwave');
+    assert.strictEqual(buildSearchQuery('Walton', ''), 'Walton');
+    assert.strictEqual(buildSearchQuery('Walton', null), 'Walton');
+    assert.strictEqual(buildSearchQuery('Walton', undefined), 'Walton');
+    // The task-only fallback (aiBrowserAgent.js) passes the task itself as
+    // the "name" when nothing was named — must not become "X X".
+    assert.strictEqual(buildSearchQuery('find hotels', 'find hotels'), 'find hotels');
+  });
+
+  await test('the DEFAULT (unstubbed) search sends the TASK as part of the query, not just the bare name', async () => {
+    let requestedUrl = null;
+    const fakePage = {
+      goto: async (url) => { requestedUrl = url; },
+      evaluate: async () => []
+    };
+    const outcome = await discoverTargetSite({
+      page: fakePage,
+      targetName: 'Walton',
+      task: 'search for microwave'
+      // searchResults intentionally NOT overridden here — this exercises the
+      // real defaultSearchResults, the one production actually calls.
+    });
+    assert.ok(requestedUrl, 'the default search must load a search-results URL');
+    const requestedQuery = new URL(requestedUrl).searchParams.get('q') || '';
+    assert.ok(/walton/i.test(requestedQuery), `query must still include the target name, got "${requestedQuery}"`);
+    assert.ok(/microwave/i.test(requestedQuery), `query must include the TASK (previously silently dropped), got "${requestedQuery}"`);
+    // The fake page returns no results either way — proves this is exercising
+    // the real, honest "no usable candidates" path, not a lucky coincidence.
+    assert.strictEqual(outcome.status, 'unreachable');
+  });
+
+  await test('the DEFAULT search does not duplicate the query for a task-only request (name and task are the same string)', async () => {
+    let requestedUrl = null;
+    const fakePage = {
+      goto: async (url) => { requestedUrl = url; },
+      evaluate: async () => []
+    };
+    const taskOnlyText = "Find hotels in Cox's Bazar under 5000 taka";
+    await discoverTargetSite({
+      page: fakePage,
+      targetName: taskOnlyText,
+      task: taskOnlyText,
+      autoSelectBest: true
+    });
+    const requestedQuery = new URL(requestedUrl).searchParams.get('q') || '';
+    assert.strictEqual((requestedQuery.match(/hotels/gi) || []).length, 1, `query must not duplicate the task text, got "${requestedQuery}"`);
   });
 
   const failed = results.filter((r) => !r.ok);

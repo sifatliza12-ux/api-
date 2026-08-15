@@ -64,6 +64,15 @@ const LOGIN_WALL_HTML = `<html><body>
   <input type="password" id="pw" />
 </body></html>`;
 
+// Deliberately has NO input/button/anything a scripted decide() could act
+// on — used as the page's STARTING content in the handoff regression tests
+// below, so if navigation to the resolved target silently failed to happen,
+// the test would fail loudly (snapshot.elements.find(...) returns undefined,
+// .ref throws) instead of passing by coincidence.
+const DECOY_HTML = `<html><body>
+  <p>decoy page: nothing here should ever be interacted with</p>
+</body></html>`;
+
 const run = async () => {
   browser = await chromium.launch({
     headless: true,
@@ -318,6 +327,150 @@ const run = async () => {
     });
 
     assert.strictEqual(discoverArgs.autoSelectBest, false, 'an explicitly-named site keeps the strict ambiguity behavior unchanged');
+  });
+
+  await test('discovery: a task-only request (no named site) falls back to the TASK as the discovery query, auto-selects, and proceeds', async () => {
+    let discoverArgs = null;
+    const discover = async (args) => { discoverArgs = args; return { status: 'discovered', url: DISCOVERED_SITE }; };
+    const decide = scriptedDecide([
+      (snapshot) => ({ action: 'input', ref: snapshot.elements.find((el) => el.tag === 'input').ref, value: 'hotels', reason: 'fill' }),
+      () => ({ action: 'done', ref: null, value: null, reason: 'done' })
+    ]);
+
+    // Empty target name + needsConfirmation == the parser's task-only shape (user named no site).
+    const result = await runBrowserAgent({
+      intent: { task: "Find hotels in Cox's Bazar under 5000 taka", targetSite: { name: '', url: null, needsConfirmation: true } },
+      page, decideNextAction: decide, discoverTargetSite: discover
+    });
+
+    // Discovery is INVOKED (not skipped), using the TASK as the query, in auto-select mode.
+    assert.ok(discoverArgs, 'discovery must run for a task-only request instead of being skipped');
+    assert.strictEqual(discoverArgs.targetName, "Find hotels in Cox's Bazar under 5000 taka", 'the task becomes the discovery query when no site is named');
+    assert.strictEqual(discoverArgs.autoSelectBest, true, 'a task-only request auto-selects the best candidate');
+
+    // The selected target is propagated downstream and the agent does NOT stop for confirmation.
+    assert.notStrictEqual(result.stopReason, 'target_ambiguous', 'the agent must not stop to ask the user to name a site');
+    assert.strictEqual(result.success, true);
+    assert.strictEqual(result.steps[0].type, 'navigation');
+    assert.strictEqual(result.steps[0].url, DISCOVERED_SITE, 'the discovered target is recorded as the navigation target (no longer "not identified")');
+  });
+
+  await test('discovery: an empty targetSite with NO needsConfirmation flag still skips discovery (legacy behavior preserved)', async () => {
+    let called = false;
+    const discover = async () => { called = true; return { status: 'discovered', url: 'about:blank' }; };
+    const decide = scriptedDecide([
+      (snapshot) => ({ action: 'input', ref: snapshot.elements.find((el) => el.tag === 'input').ref, value: 'x', reason: 'fill' }),
+      () => ({ action: 'done', ref: null, value: null, reason: 'done' })
+    ]);
+    await withPage(FORM_HTML, async () => {
+      const result = await runBrowserAgent({ intent: { task: 'do something', targetSite: {} }, page, decideNextAction: decide, discoverTargetSite: discover });
+      assert.strictEqual(called, false, 'a bare empty targetSite must not trigger discovery — it runs from the current page');
+      assert.strictEqual(result.success, true);
+    });
+  });
+
+  // --- REGRESSION: the real runtime handoff (discovery -> navigation ->
+  // fresh snapshot -> interaction), proven against a page that starts
+  // SOMEWHERE ELSE ---------------------------------------------------------
+  // Every discovery test above starts from whatever the shared page happens
+  // to already show, so a broken handoff (e.g. the loop silently deciding
+  // against the page's PRE-discovery content instead of the resolved
+  // target) could pass by coincidence. These tests explicitly park the page
+  // on DECOY_HTML — content with nothing a script could act on — before
+  // calling runBrowserAgent, so a real navigation to the resolved target is
+  // the ONLY way the scripted decide() below can find its input field at
+  // all. This is what a live "site resolved but the agent still acts on the
+  // wrong page" bug would actually look like, and it's what these prove did
+  // NOT happen: it fails loudly (TypeError on undefined.ref) instead of
+  // silently passing, if the handoff regresses.
+
+  await test('REGRESSION: named-site intent — discovery resolves a URL, the browser actually navigates there, the FIRST fresh snapshot reflects the resolved site (not the page it started on), and the agent interacts with it', async () => {
+    await page.goto(encode(DECOY_HTML), { waitUntil: 'domcontentloaded' });
+
+    let discoverArgs = null;
+    const discover = async (args) => { discoverArgs = args; return { status: 'discovered', url: DISCOVERED_SITE }; };
+
+    let urlSeenByFirstDecision = null;
+    const decide = scriptedDecide([
+      (snapshot) => {
+        urlSeenByFirstDecision = snapshot.url;
+        return { action: 'input', ref: snapshot.elements.find((el) => el.tag === 'input').ref, value: 'microwave', reason: 'fill' };
+      },
+      () => ({ action: 'done', ref: null, value: null, reason: 'done' })
+    ]);
+
+    const result = await runBrowserAgent({
+      intent: { task: 'search for microwave', targetSite: { name: 'Walton', url: null, needsConfirmation: false } },
+      page, decideNextAction: decide, discoverTargetSite: discover
+    });
+
+    assert.strictEqual(discoverArgs.targetName, 'Walton', 'the named site is what gets resolved');
+    assert.strictEqual(page.url(), DISCOVERED_SITE, 'the live page must actually be on the resolved target, not the decoy it started on');
+    assert.strictEqual(urlSeenByFirstDecision, DISCOVERED_SITE, 'the FIRST fresh snapshot handed to the agent must already reflect the resolved site');
+    assert.strictEqual(result.success, true);
+    assert.strictEqual(result.steps[0].type, 'navigation');
+    assert.strictEqual(result.steps[0].url, DISCOVERED_SITE);
+  });
+
+  await test('REGRESSION: task-only intent (no named site) — discovery resolves a URL from the TASK, the browser actually navigates there, and the agent interacts with the resolved site (not the page it started on)', async () => {
+    await page.goto(encode(DECOY_HTML), { waitUntil: 'domcontentloaded' });
+
+    let discoverArgs = null;
+    const discover = async (args) => { discoverArgs = args; return { status: 'discovered', url: DISCOVERED_SITE }; };
+
+    let urlSeenByFirstDecision = null;
+    const decide = scriptedDecide([
+      (snapshot) => {
+        urlSeenByFirstDecision = snapshot.url;
+        return { action: 'input', ref: snapshot.elements.find((el) => el.tag === 'input').ref, value: 'hotels', reason: 'fill' };
+      },
+      () => ({ action: 'done', ref: null, value: null, reason: 'done' })
+    ]);
+
+    const result = await runBrowserAgent({
+      intent: { task: "Find hotels in Cox's Bazar under 5000 taka", targetSite: { name: '', url: null, needsConfirmation: true } },
+      page, decideNextAction: decide, discoverTargetSite: discover
+    });
+
+    assert.strictEqual(discoverArgs.targetName, "Find hotels in Cox's Bazar under 5000 taka", 'the task itself becomes the discovery query');
+    assert.strictEqual(discoverArgs.autoSelectBest, true);
+    assert.strictEqual(page.url(), DISCOVERED_SITE, 'the live page must actually be on the resolved target, not the decoy it started on');
+    assert.strictEqual(urlSeenByFirstDecision, DISCOVERED_SITE, 'the FIRST fresh snapshot handed to the agent must already reflect the resolved site');
+    assert.strictEqual(result.success, true);
+  });
+
+  await test('REGRESSION: when discover() already navigated the live page itself (as the REAL siteDiscovery does via its verify step), the agent does not redundantly re-navigate a second time', async () => {
+    await page.goto(encode(DECOY_HTML), { waitUntil: 'domcontentloaded' });
+
+    // Simulates siteDiscovery.discoverTargetSite's own real behavior: its
+    // verify() step navigates the SAME shared page to the winning candidate
+    // BEFORE ever returning a 'discovered' outcome (see siteDiscovery.js).
+    const discover = async () => {
+      await page.goto(DISCOVERED_SITE, { waitUntil: 'domcontentloaded' });
+      return { status: 'discovered', url: DISCOVERED_SITE };
+    };
+
+    let gotoCalls = 0;
+    const originalGoto = page.goto.bind(page);
+    page.goto = async (...args) => { gotoCalls += 1; return originalGoto(...args); };
+
+    const decide = scriptedDecide([() => ({ action: 'done', ref: null, value: null, reason: 'done' })]);
+    try {
+      const result = await runBrowserAgent({
+        intent: { task: 'x', targetSite: { name: 'Whatever', url: null } },
+        page, decideNextAction: decide, discoverTargetSite: discover
+      });
+      assert.strictEqual(result.success, true);
+      // 1 call: discover()'s own goto to DISCOVERED_SITE. The main loop must
+      // recognize the page is already there and skip its own redundant goto
+      // — a real target site being hit twice in immediate succession is
+      // exactly the pattern that can trip rate-limiting/bot-detection on a
+      // live site (observed directly against the search backend itself
+      // while diagnosing this issue).
+      assert.strictEqual(gotoCalls, 1, 'the live page must be navigated to the resolved target exactly once, not twice');
+    } finally {
+      page.goto = originalGoto;
+    }
   });
 
   await browser.close();

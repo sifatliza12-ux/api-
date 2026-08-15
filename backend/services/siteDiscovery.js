@@ -7,7 +7,12 @@
 //
 // This module turns a name into a *reached, verified* starting URL, entirely
 // generically:
-//   1. run a plain web search for the name,
+//   1. run a plain web search for the name (enriched with the caller's TASK
+//      text when one is available and distinct from the name — see
+//      buildSearchQuery — so a name shared by unrelated real-world entities
+//      is disambiguated by what the user is actually trying to do, instead
+//      of resolving to whichever homonym's host happens to match the name
+//      most literally),
 //   2. rank the result links by how well they correspond to the name
 //      (host-label match + title/snippet overlap + root-domain preference),
 //   3. if one candidate clearly wins, navigate to it and VERIFY the live page
@@ -136,13 +141,40 @@ const rankCandidates = (targetName, candidates) => {
   return [...bestByHost.values()].sort((a, b) => b.score - a.score);
 };
 
+// Builds the actual text sent to the search engine. A bare NAME alone (e.g.
+// "Walton") is exactly ambiguous between real, unrelated entities that
+// happen to share it — nothing stops a completely different company from
+// registering a matching domain (verified live: a plain "Walton" search
+// surfaces a US land-investment company at walton.com ahead of the intended
+// Bangladeshi electronics maker, and walton.com then legitimately VERIFIES —
+// same host, page genuinely says "Walton" — so discovery confidently
+// resolves to the wrong, but real, site). The TASK the caller already has
+// (`intent.task`) is exactly the disambiguating context a bare name search
+// throws away; folding it into the query text is what lets the search
+// engine's OWN relevance ranking prefer the entity actually relevant to what
+// the user wants to do — the same thing a person would do by typing an extra
+// keyword or two rather than searching a bare name. Ranking/verification
+// (rankCandidates/verifyDestination) still key off the bare NAME only,
+// unchanged — this only changes what text gets searched FOR.
+const buildSearchQuery = (name, task) => {
+  const trimmedName = String(name || '').trim();
+  const trimmedTask = String(task || '').trim();
+  // No task, or the task already IS the query (the task-only fallback in
+  // aiBrowserAgent.js passes the task itself as `name` when nothing was
+  // named) — appending it to itself would be a no-op query, so skip.
+  if (!trimmedTask || trimmedTask.toLowerCase() === trimmedName.toLowerCase()) {
+    return trimmedName;
+  }
+  return `${trimmedName} ${trimmedTask}`;
+};
+
 // Default search backend: drives the agent's own Playwright page to a plain
 // web search and scrapes result links generically (any external http(s)
 // anchor, DuckDuckGo redirect links unwrapped). Best-effort by nature — the
 // whole thing is injectable so production can swap in a proper search API and
 // tests inject deterministic candidates. Never throws.
-const defaultSearchResults = async (query, { page }) => {
-  const searchUrl = DEFAULT_SEARCH_URL_TEMPLATE.replace('{query}', encodeURIComponent(query));
+const defaultSearchResults = async (query, { page, task }) => {
+  const searchUrl = DEFAULT_SEARCH_URL_TEMPLATE.replace('{query}', encodeURIComponent(buildSearchQuery(query, task)));
   const searchHost = hostOf(searchUrl);
   try {
     await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
@@ -329,6 +361,7 @@ module.exports = {
   tokenizeName,
   registrableLabel,
   hostOf,
+  buildSearchQuery,
   // exported for tests / callers that want to reason about the knobs
   MIN_CONFIDENCE,
   AMBIGUITY_MARGIN

@@ -438,32 +438,77 @@ const runBrowserAgent = async ({ intent, maxSteps = DEFAULT_MAX_STEPS, page: inj
     const trustedUrl = (site.url && site.urlSource !== 'model') ? site.url : null;
     const seedUrl = (site.url && site.urlSource === 'model') ? site.url : null;
 
+    // Diagnostic trace of the resolve-start-URL handoff (checkpoints 1-6) —
+    // cheap, always-on, and load-bearing for diagnosing a live run where the
+    // agent ends up interacting with the wrong page: with only "it didn't
+    // work" to go on, there is no way to tell whether the intent itself was
+    // wrong, discovery picked an unintended target, or navigation/snapshot
+    // handoff dropped a correctly-resolved URL. Every field logged here is
+    // exactly what the trust-ladder comment above documents deciding on.
+    console.log('[Backend][aiBrowserAgent][handoff] intent received', {
+      task: intent.task,
+      targetSiteName: site.name || null,
+      targetSiteUrl: site.url || null,
+      urlSource: site.urlSource || null,
+      needsConfirmation: Boolean(site.needsConfirmation)
+    });
+
+    // Task-only requests: the user described a task WITHOUT naming a site, so
+    // the parser returns an empty target with needsConfirmation set. Without a
+    // name there is nothing to search, so discovery used to be skipped entirely
+    // — leaving no target ("not identified"). Fall back to the TASK itself as
+    // the discovery query so discovery can still find and verify a suitable
+    // site. Guarded by needsConfirmation so a bare empty targetSite with no such
+    // flag keeps the legacy "no target -> run from the current page" behavior
+    // that callers pre-positioning their own page (and the tests) rely on.
+    const taskQuery = (!targetName && site.needsConfirmation) ? String(intent.task || '').trim() : '';
+    const discoveryQuery = targetName || taskQuery;
+
     let startUrl = trustedUrl;
-    if (!startUrl && (targetName || seedUrl)) {
-      // When the parser was NOT confident the target name is the site the user
-      // meant (needsConfirmation) — i.e. the user described a task without
-      // clearly naming a site — let discovery auto-select its strongest,
-      // still-verified candidate instead of stopping on ambiguity. An
-      // explicitly named, high-confidence site keeps the strict ambiguity gate.
-      const autoSelectBest = Boolean(site.needsConfirmation);
-      const outcome = await discover({ page, targetName, task: intent.task, seedUrl, autoSelectBest });
+    if (!startUrl && (discoveryQuery || seedUrl)) {
+      // No confidently-named site (needsConfirmation), or no named site at all
+      // (task-only — the query came from the task): let discovery auto-select
+      // its strongest, still-verified candidate instead of stopping on
+      // ambiguity. An explicitly named, high-confidence site keeps the strict
+      // ambiguity gate.
+      const autoSelectBest = Boolean(site.needsConfirmation) || Boolean(taskQuery);
+      const outcome = await discover({ page, targetName: discoveryQuery, task: intent.task, seedUrl, autoSelectBest });
+      console.log('[Backend][aiBrowserAgent][handoff] discovery result', {
+        discoveryQuery, autoSelectBest, status: outcome.status, url: outcome.url || null, reason: outcome.reason || null
+      });
       if (outcome.status === 'discovered') {
         startUrl = outcome.url;
       } else if (outcome.status === 'ambiguous') {
-        return finalInfo({ success: false, stopped: true, stopReason: 'target_ambiguous', message: buildAmbiguityMessage(targetName, outcome), candidates: outcome.candidates || [] });
+        return finalInfo({ success: false, stopped: true, stopReason: 'target_ambiguous', message: buildAmbiguityMessage(discoveryQuery, outcome), candidates: outcome.candidates || [] });
       } else if (outcome.status === 'disabled') {
         // Discovery switched off by configuration — fall back to the legacy
         // behavior of letting the loop start from wherever the page already is.
       } else {
         // unreachable / no_query
-        return finalInfo({ success: false, stopped: true, stopReason: 'target_unreachable', message: buildUnreachableMessage(targetName, outcome), candidates: outcome.candidates || [] });
+        return finalInfo({ success: false, stopped: true, stopReason: 'target_unreachable', message: buildUnreachableMessage(discoveryQuery, outcome), candidates: outcome.candidates || [] });
       }
     }
+    console.log('[Backend][aiBrowserAgent][handoff] resolved start URL', { startUrl: startUrl || null, currentPageUrlBeforeNav: page.url() });
 
     if (startUrl) {
-      await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: ACTION_TIMEOUT_MS });
+      // Discovery's own live-verification step (siteDiscovery.verifyDestination)
+      // already navigates the SAME shared `page` to `startUrl` before ever
+      // returning a 'discovered' outcome — see siteDiscovery.js. Re-navigating
+      // here unconditionally used to hit the live target a SECOND time for
+      // every discovered run: wasted, and a real risk against any site that
+      // treats a rapid second request differently from the first (rate
+      // limiting, bot/anomaly detection, a one-time redirect token) — the
+      // same class of behavior observed hitting the search backend itself
+      // during diagnosis of this issue. Only navigate again when the page
+      // ISN'T already sitting on `startUrl` (the direct-trustedUrl path, and
+      // any discover() implementation — including every test's injected
+      // stub — that returns a URL without itself having navigated there).
+      if (page.url() !== startUrl) {
+        await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: ACTION_TIMEOUT_MS });
+      }
       await waitForPageStability(page, 3000);
       await dismissCommonOverlays(page).catch(() => null);
+      console.log('[Backend][aiBrowserAgent][handoff] page.url() immediately after navigation', { url: page.url() });
       steps.push({ type: 'navigation', value: startUrl, url: startUrl, selector: null, locators: null, meta: null, pageTitle: await page.title().catch(() => null), timestamp: new Date().toISOString() });
     }
 
@@ -474,6 +519,16 @@ const runBrowserAgent = async ({ intent, maxSteps = DEFAULT_MAX_STEPS, page: inj
       }
 
       const snapshot = await buildPageSnapshot(page);
+      if (stepIndex === 0) {
+        // Checkpoints 9-10: the FIRST fresh snapshot after the handoff above,
+        // and confirmation that this exact snapshot (same url) is what gets
+        // handed to decideNextAction — the two things that determine whether
+        // the model is actually looking at the resolved target site or
+        // something else entirely.
+        console.log('[Backend][aiBrowserAgent][handoff] first fresh snapshot after navigation', {
+          snapshotUrl: snapshot.url, snapshotTitle: snapshot.title, elementCount: snapshot.elements.length
+        });
+      }
       const action = await decide(snapshot, intent, history);
       history.push(action);
 
