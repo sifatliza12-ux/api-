@@ -1,32 +1,63 @@
 /**
- * Light-mode variable overrides, shared by every ForgeFlow page. Every page
- * (Dashboard, Marketplace, My APIs, Purchased APIs, Plans, Settings) already
- * defines the same set of dark-mode CSS custom properties in its own :root
- * block (--bg-a/b/c, --panel, --panel-strong, --surface-solid, --text,
- * --muted, --muted-2, --line, --danger); the popup uses a slightly different
- * set (--bg, --surface, --surface-strong, --shadow). This file only
- * re-declares those same names under :root[data-theme="light"] — an
- * attribute selector, so it wins on specificity regardless of load order —
- * which shared/theme.js sets on <html> before first paint. No page's own
- * stylesheet needs to change: every rule that already reads var(--text) etc.
- * picks up the light values automatically.
+ * Shared theme layer, loaded LAST on every ForgeFlow page (after each page's
+ * own stylesheet + nav.css), so rules here win the cascade at equal-or-higher
+ * specificity. Two jobs:
+ *
+ *   1. Light-mode overrides. Every page defines the ForgeFlow dark palette
+ *      (--bg-a/b/c, --panel, --panel-strong, --surface-solid, --text, --muted,
+ *      --muted-2, --line, --danger, --accent*) in its own :root block; the
+ *      popup adds --bg/--surface/--surface-strong/--shadow. This file
+ *      re-declares those same names under :root[data-theme="light"] — an
+ *      attribute selector (specificity 0,2,0) that beats the plain :root
+ *      (0,1,0) regardless of load order. shared/theme.js sets data-theme on
+ *      <html> before first paint.
+ *
+ *   2. Page background. The professional navy/teal theme replaces the old
+ *      heavy purple/pink radial "glow" backdrops with a calm, near-flat navy
+ *      (dark) / light-slate (light) wash carrying only a faint teal/blue hint.
+ *      Because this file loads last, `:root[data-theme="…"] body` (0,2,1)
+ *      overrides each page's own body background in one place.
+ *
+ * Palette: deep navy/charcoal surfaces, teal/emerald primary accent, subtle
+ * blue secondary accent, amber reserved for warnings — a developer/automation
+ * SaaS look rather than a generic AI-gradient aesthetic.
  */
+
 :root[data-theme="light"] {
-    --bg-a: #f6f3ff;
-    --bg-b: #efe9fb;
-    --bg-c: #f8eef6;
-    --panel: rgba(32, 21, 61, 0.045);
-    --panel-strong: rgba(32, 21, 61, 0.08);
+    --bg-a: #f4f6f9;
+    --bg-b: #eef1f6;
+    --bg-c: #e9edf3;
+    --panel: rgba(15, 23, 42, 0.04);
+    --panel-strong: rgba(15, 23, 42, 0.07);
     --surface-solid: #ffffff;
-    --text: #201533;
-    --muted: #5b5170;
-    --muted-2: #6d6384;
-    --line: rgba(32, 21, 61, 0.13);
-    --danger: #d1354a;
+    --text: #0f172a;
+    --muted: #475569;
+    --muted-2: #64748b;
+    --line: rgba(15, 23, 42, 0.12);
+    --danger: #dc2626;
+
+    /* Darker accents than dark-mode so text/links clear AA contrast on white */
+    --accent: #0f766e;    /* teal-700 */
+    --accent-2: #2563eb;  /* blue-600 */
+    --accent-3: #b45309;  /* amber-700 */
 
     /* Popup-specific variable names */
-    --bg: #f6f3ff;
-    --surface: rgba(32, 21, 61, 0.05);
-    --surface-strong: rgba(32, 21, 61, 0.09);
-    --shadow: 0 24px 50px rgba(32, 21, 61, 0.14);
+    --bg: #f4f6f9;
+    --surface: rgba(15, 23, 42, 0.05);
+    --surface-strong: rgba(15, 23, 42, 0.09);
+    --shadow: 0 24px 50px rgba(15, 23, 42, 0.14);
+}
+
+/* Calm page backdrops — subtle accent hint, no heavy glow. */
+:root[data-theme="dark"] body {
+    background:
+        radial-gradient(1100px 560px at 12% -12%, rgba(13, 148, 136, 0.07), transparent 60%),
+        radial-gradient(1000px 520px at 100% -6%, rgba(59, 130, 246, 0.05), transparent 55%),
+        linear-gradient(180deg, #0b111c 0%, #0c1322 100%);
+}
+
+:root[data-theme="light"] body {
+    background:
+        radial-gradient(1000px 520px at 12% -10%, rgba(13, 148, 136, 0.05), transparent 60%),
+        linear-gradient(180deg, #f4f6f9 0%, #eef1f6 100%);
 }
