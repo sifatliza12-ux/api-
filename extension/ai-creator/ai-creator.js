@@ -56,6 +56,12 @@ const escapeHtml = (str) => {
 let authHeaders = {};
 let session = null;           // latest formatSession()-shaped object from the backend
 let lastGenerateExtra = null; // { myApiId, endpoint, method } from the most recent successful /generate response
+// The just-submitted text, shown immediately on Send — session.messages
+// (server state) only reflects it once the backend round-trip completes,
+// which can be a while, so this is what makes the message appear at once
+// instead of only after the response arrives. Cleared once session.messages
+// genuinely contains it (or on a fresh request), never rendered twice.
+let pendingUserMessage = null;
 let isBusy = false;
 let siteConfirmed = false;    // local-only: user explicitly accepted an uncertain targetSite
 let transientError = null;    // a request-level error with no session context (e.g. empty command)
@@ -82,8 +88,12 @@ function describeIntentForChat(intent) {
 function renderTranscript() {
     chatTranscript.querySelectorAll('.ai-chat-message').forEach((el) => el.remove());
 
-    const messages = session?.messages;
-    if (!Array.isArray(messages) || !messages.length) {
+    const messages = Array.isArray(session?.messages) ? session.messages : [];
+    // Already present in the real session (the backend echoed it back) —
+    // don't render it a second time as a separate pending bubble.
+    const showPending = pendingUserMessage && !messages.some((m) => m.role === 'user' && m.text === pendingUserMessage);
+
+    if (!messages.length && !showPending) {
         chatEmpty.hidden = false;
         return;
     }
@@ -110,6 +120,14 @@ function renderTranscript() {
         }
         chatTranscript.appendChild(el);
     });
+
+    if (showPending) {
+        const el = document.createElement('div');
+        el.className = 'ai-chat-message ai-chat-message--user';
+        el.textContent = pendingUserMessage;
+        chatTranscript.appendChild(el);
+    }
+
     chatTranscript.scrollTop = chatTranscript.scrollHeight;
 }
 
@@ -191,6 +209,23 @@ function stopElapsedTimer() {
 }
 
 function renderStatusArea() {
+    // handleSubmit's POST (create/follow-up) is a real, in-flight request
+    // with no session-visible status yet — session.status only updates
+    // once the response arrives, so without this the status area (and any
+    // "processing" feedback) would stay empty for the entire round-trip.
+    // 'generating' is excluded because handleGenerate already reflects that
+    // status optimistically onto `session` itself before this ever runs.
+    if (isBusy && session?.status !== 'generating') {
+        statusArea.hidden = false;
+        statusArea.innerHTML = `
+            <span class="ai-status-spinner" aria-hidden="true"></span>
+            <span class="ai-status-text">${session ? 'Sending your message…' : 'Understanding your request…'}</span>
+            <span class="ai-status-elapsed"></span>
+        `;
+        stopElapsedTimer();
+        return;
+    }
+
     const status = session?.status;
     const msg = status ? STATUS_MESSAGES[status] : null;
     if (!msg) {
@@ -408,6 +443,7 @@ function resetForNewRequest() {
     lastGenerateExtra = null;
     siteConfirmed = false;
     transientError = null;
+    pendingUserMessage = null;
     stopPolling();
     stopElapsedTimer();
     input.value = '';
@@ -457,6 +493,7 @@ async function handleSubmit(event) {
     transientError = null;
     siteConfirmed = false;
     isBusy = true;
+    pendingUserMessage = text; // show it right now — see renderTranscript
     input.value = '';
     renderAll();
 
@@ -481,6 +518,9 @@ async function handleSubmit(event) {
             transientError = data.message || `Request failed (HTTP ${response.status}).`;
         } else {
             applyServerSession(data);
+            // Now genuinely present in session.messages (the backend echoed
+            // it back) — renderTranscript would otherwise render it twice.
+            pendingUserMessage = null;
         }
     } catch (err) {
         transientError = 'Could not reach the ForgeFlow server. Please try again.';

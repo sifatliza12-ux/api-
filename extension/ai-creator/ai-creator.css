@@ -24,6 +24,15 @@
     box-sizing: border-box;
 }
 
+/* Several containers below (.ai-status-area/.ai-error-area/.ai-result-area)
+   set their own `display` for layout — any author rule with a `display`
+   property beats the browser's UA-stylesheet `[hidden] { display: none }`
+   regardless of selector specificity, so without this override an element
+   correctly marked hidden="" by JS still renders as an empty box. */
+[hidden] {
+    display: none !important;
+}
+
 body {
     min-height: 100vh;
     font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;

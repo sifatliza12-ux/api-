@@ -216,6 +216,90 @@ const run = async () => {
     });
   });
 
+  // Regression test for the reported bug: the user's message must appear
+  // the instant Send is clicked, not only once the (possibly multi-minute,
+  // Ollama-backed) backend round-trip completes. Holds the real
+  // POST /api/ai-creator/sessions response open to prove the message and a
+  // genuine loading state render BEFORE any response exists, using the
+  // exact backend response shape POST /api/ai-creator/sessions actually
+  // returns (see makeSession/formatSession), not an invented one.
+  await test('the user\'s message renders immediately on Send, before the backend responds, with a genuine (non-fake) loading state', async () => {
+    let releaseCreate;
+    const gate = new Promise((resolve) => { releaseCreate = resolve; });
+    const session = makeSession({ nlCommand: 'Create an API to search hotels in Cox\'s Bazar.', intent: HOTEL_INTENT });
+
+    const matchers = [{
+      test: (url, m) => url.endsWith('/api/ai-creator/sessions') && m === 'POST',
+      respond: async (route) => { await gate; await fulfillJson(route, 201, { success: true, ...session }); }
+    }];
+
+    await withPage({ matchers }, async (page, calls) => {
+      await page.fill('#ai-input', 'Create an API to search hotels in Cox\'s Bazar.');
+      await page.click('#send-btn');
+
+      // Before the backend has responded at all: the message must already
+      // be visible, the empty-state prompt gone, input disabled, and a
+      // real (not fabricated/percentage) loading indicator shown.
+      await page.waitForSelector('.ai-chat-message--user');
+      const userBubbleText = await page.textContent('.ai-chat-message--user');
+      assert.strictEqual(userBubbleText, 'Create an API to search hotels in Cox\'s Bazar.');
+      assert.strictEqual(await page.$eval('#chat-empty', (el) => el.hidden), true);
+      assert.strictEqual(await page.$eval('#ai-input', (el) => el.disabled), true);
+      assert.strictEqual(await page.$eval('#send-btn', (el) => el.disabled), true);
+
+      const statusHidden = await page.$eval('#status-area', (el) => el.hidden);
+      assert.strictEqual(statusHidden, false, 'expected a genuine loading/processing indicator while the request is in flight');
+      const statusText = await page.textContent('#status-area');
+      assert.ok(statusText.toLowerCase().includes('understanding'), 'expected an honest status message, not silence');
+      assert.ok(!/%/.test(statusText), 'must never show a fake percentage');
+
+      // The three previously-broken containers must stay genuinely hidden
+      // (zero visible box), not just marked hidden="" while still painted —
+      // the actual CSS bug this test also guards against.
+      for (const id of ['confirm-area', 'error-area', 'result-area']) {
+        const box = await page.locator(`#${id}`).boundingBox();
+        assert.strictEqual(box, null, `#${id} must not be rendered while hidden`);
+      }
+
+      assert.strictEqual(calls.filter((c) => c.url.endsWith('/api/ai-creator/sessions') && c.method === 'POST').length, 1);
+
+      // Now let the real backend response shape arrive and confirm the
+      // pending bubble is reconciled into the real transcript, not
+      // duplicated.
+      releaseCreate();
+      await page.waitForSelector('#confirm-area:not([hidden])');
+      const userBubbles = await page.locator('.ai-chat-message--user').count();
+      assert.strictEqual(userBubbles, 1, 'the message must not be rendered twice once the real session arrives');
+      assert.strictEqual(await page.$eval('#status-area', (el) => el.hidden), false);
+      assert.ok((await page.textContent('#status-area')).includes('confirmation'));
+    });
+  });
+
+  await test('a failed session request shows a real error, clears the loading state, and restores Send/input', async () => {
+    const matchers = [{
+      test: (url, m) => url.endsWith('/api/ai-creator/sessions') && m === 'POST',
+      respond: (route) => fulfillJson(route, 500, { success: false, message: 'The AI provider is unavailable right now.' })
+    }];
+
+    await withPage({ matchers }, async (page) => {
+      await page.fill('#ai-input', 'Create an API to do something.');
+      await page.click('#send-btn');
+
+      await page.waitForSelector('#error-area:not([hidden])');
+      const errorText = await page.textContent('#error-area');
+      assert.ok(errorText.includes('The AI provider is unavailable right now.'), 'expected the real backend error message, not a generic one');
+
+      const bodyText = await page.textContent('body');
+      assert.ok(!bodyText.includes('understood'), 'must not render a confirmation/success area for a failed request');
+      assert.strictEqual(await page.$eval('#confirm-area', (el) => el.hidden), true);
+
+      // Loading state fully cleared, controls restored.
+      assert.strictEqual(await page.$eval('#status-area', (el) => el.hidden), true);
+      assert.strictEqual(await page.$eval('#ai-input', (el) => el.disabled), false);
+      assert.strictEqual(await page.$eval('#send-btn', (el) => el.disabled), false);
+    });
+  });
+
   await test('confirmation area renders a flight-shaped intent (origin/destination) generically', async () => {
     const session = makeSession({ intent: FLIGHT_INTENT });
     const matchers = [{ test: (url, m) => url.endsWith('/api/ai-creator/sessions') && m === 'POST', respond: (route) => fulfillJson(route, 201, { success: true, ...session }) }];
