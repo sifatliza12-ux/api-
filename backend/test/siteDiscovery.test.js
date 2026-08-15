@@ -239,6 +239,55 @@ const run = async () => {
     assert.strictEqual(outcome.status, 'unreachable');
   });
 
+  // --- autoSelectBest: task-only requests (user named no site) ------------
+  // Demo blocker: a request that describes a task without naming a site yields
+  // a generic target, so no candidate's HOST matches it and discovery blocked
+  // with "couldn't confidently tell which website you meant". autoSelectBest
+  // lets discovery pick its strongest RANKED candidate and rely on live
+  // verification as the suitability gate — without lowering the gate for a
+  // NAMED site (default, autoSelectBest=false) and without inventing a site.
+
+  await test('autoSelectBest: a task-only request selects the top-ranked candidate even below the name-match floor (and default behavior still blocks)', async () => {
+    const search = async () => ([
+      { url: 'https://skyfly.example/', title: 'SkyFly cheap flight deals' },
+      { url: 'https://airhop.example/', title: 'AirHop flight deals' }
+    ]);
+    // Default (a NAMED-site request): below the name-match floor -> honest ambiguous, UNCHANGED.
+    const strict = await discoverTargetSite({ page: null, targetName: 'flight deals', searchResults: search, verify: verifyFor(['skyfly.example', 'airhop.example']) });
+    assert.strictEqual(strict.status, 'ambiguous', 'a named-site request must still fail honestly below the floor');
+    // Task-only (no named site): pick the strongest-ranked, verify, proceed.
+    const auto = await discoverTargetSite({ page: null, targetName: 'flight deals', searchResults: search, verify: verifyFor(['skyfly.example', 'airhop.example']), autoSelectBest: true });
+    assert.strictEqual(auto.status, 'discovered');
+    assert.ok(/skyfly\.example|airhop\.example/.test(auto.url), `should proceed with a real discovered candidate, got ${auto.url}`);
+    assert.strictEqual(auto.urlTrust, 'discovered');
+  });
+
+  await test('autoSelectBest: a near-tie is resolved to the top-ranked verified candidate instead of blocking (and default behavior still blocks)', async () => {
+    const search = async () => ([
+      { url: 'https://northwind.com/', title: 'Northwind' },
+      { url: 'https://northwind.io/', title: 'Northwind' }
+    ]);
+    const strict = await discoverTargetSite({ page: null, targetName: 'Northwind', searchResults: search, verify: verifyFor(['northwind.com', 'northwind.io']) });
+    assert.strictEqual(strict.status, 'ambiguous', 'a genuine near-tie for a named site must still be surfaced');
+    const auto = await discoverTargetSite({ page: null, targetName: 'Northwind', searchResults: search, verify: verifyFor(['northwind.com', 'northwind.io']), autoSelectBest: true });
+    assert.strictEqual(auto.status, 'discovered');
+  });
+
+  await test('autoSelectBest still fails honestly (unreachable) when the top candidate does not verify — never invents a site', async () => {
+    const auto = await discoverTargetSite({
+      page: null, targetName: 'flight deals',
+      searchResults: async () => ([{ url: 'https://skyfly.example/', title: 'SkyFly flight deals' }]),
+      verify: verifyFor([]), // nothing verifies on the live page
+      autoSelectBest: true
+    });
+    assert.strictEqual(auto.status, 'unreachable');
+  });
+
+  await test('autoSelectBest still returns unreachable when the search yields no usable candidates', async () => {
+    const auto = await discoverTargetSite({ page: null, targetName: 'flight deals', searchResults: async () => ([]), autoSelectBest: true });
+    assert.strictEqual(auto.status, 'unreachable');
+  });
+
   // --- verifyDestination itself (host + name corroboration) ---------------
 
   await test('verifyDestination passes when host matches and the target name appears on the page', async () => {

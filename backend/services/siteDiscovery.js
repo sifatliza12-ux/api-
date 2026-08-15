@@ -235,7 +235,8 @@ const discoverTargetSite = async ({
   verify = verifyDestination,
   navigate = defaultNavigate,
   minConfidence = MIN_CONFIDENCE,
-  margin = AMBIGUITY_MARGIN
+  margin = AMBIGUITY_MARGIN,
+  autoSelectBest = false
 } = {}) => {
   if (!DISCOVERY_ENABLED) {
     return { status: 'disabled', reason: 'site discovery is disabled by configuration' };
@@ -278,14 +279,31 @@ const discoverTargetSite = async ({
     return { status: 'unreachable', candidates: [], reason: 'the web search returned no usable candidate sites' };
   }
 
-  // 3) Decide — refuse to pick when nothing clearly wins.
+  // 3) Decide.
+  //
+  // The minConfidence/margin gates below measure how well a candidate's HOST
+  // matches an explicitly NAMED site — they exist to refuse to guess when the
+  // user pointed at a specific site (a candidate that doesn't clearly match
+  // the named site, or a near-tie between two plausible sites, is a real
+  // ambiguity we surface rather than pick blindly).
+  //
+  // But when the user did NOT name a site and only described a task
+  // (autoSelectBest), that name<->host confidence is the wrong gate: there is
+  // no named site to match, and any candidate that actually verifies on the
+  // live page fulfills the request. In that case we take the strongest-RANKED
+  // candidate and let live verification (step 4) be the suitability gate
+  // instead of blocking. This never lowers the threshold for a named site
+  // (autoSelectBest defaults false), and never invents a site — a candidate
+  // that fails to verify, or an empty search, still returns unreachable.
   const top = ranked[0];
   const second = ranked[1];
-  if (top.score < minConfidence) {
-    return { status: 'ambiguous', candidates: ranked.slice(0, 3), confidence: top.score, reason: 'no candidate strongly matched the requested target name' };
-  }
-  if (second && second.score >= minConfidence && (top.score - second.score) < margin) {
-    return { status: 'ambiguous', candidates: ranked.slice(0, 3), confidence: top.score, reason: 'several candidate sites matched the target name about equally' };
+  if (!autoSelectBest) {
+    if (top.score < minConfidence) {
+      return { status: 'ambiguous', candidates: ranked.slice(0, 3), confidence: top.score, reason: 'no candidate strongly matched the requested target name' };
+    }
+    if (second && second.score >= minConfidence && (top.score - second.score) < margin) {
+      return { status: 'ambiguous', candidates: ranked.slice(0, 3), confidence: top.score, reason: 'several candidate sites matched the target name about equally' };
+    }
   }
 
   // 4) Verify the winner on the live page before committing to it.

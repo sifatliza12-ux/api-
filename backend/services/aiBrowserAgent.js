@@ -440,7 +440,13 @@ const runBrowserAgent = async ({ intent, maxSteps = DEFAULT_MAX_STEPS, page: inj
 
     let startUrl = trustedUrl;
     if (!startUrl && (targetName || seedUrl)) {
-      const outcome = await discover({ page, targetName, task: intent.task, seedUrl });
+      // When the parser was NOT confident the target name is the site the user
+      // meant (needsConfirmation) — i.e. the user described a task without
+      // clearly naming a site — let discovery auto-select its strongest,
+      // still-verified candidate instead of stopping on ambiguity. An
+      // explicitly named, high-confidence site keeps the strict ambiguity gate.
+      const autoSelectBest = Boolean(site.needsConfirmation);
+      const outcome = await discover({ page, targetName, task: intent.task, seedUrl, autoSelectBest });
       if (outcome.status === 'discovered') {
         startUrl = outcome.url;
       } else if (outcome.status === 'ambiguous') {

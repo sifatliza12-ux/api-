@@ -293,6 +293,33 @@ const run = async () => {
     assert.strictEqual(discoverArgs.targetName, 'Walton');
   });
 
+  await test('discovery: a task-only (low-confidence) intent asks discovery to auto-select its best candidate', async () => {
+    let discoverArgs = null;
+    const discover = async (args) => { discoverArgs = args; return { status: 'discovered', url: DISCOVERED_SITE }; };
+    const decide = scriptedDecide([() => ({ action: 'done', ref: null, value: null, reason: 'done' })]);
+
+    await runBrowserAgent({
+      // needsConfirmation:true == the parser wasn't sure of the site, i.e. the user described a task without naming one.
+      intent: { task: 'find hotels', targetSite: { name: 'hotel booking site', url: null, needsConfirmation: true } },
+      page, decideNextAction: decide, discoverTargetSite: discover
+    });
+
+    assert.strictEqual(discoverArgs.autoSelectBest, true, 'a task-only request should let discovery auto-select its best candidate rather than block');
+  });
+
+  await test('discovery: an explicitly-named (high-confidence) intent does NOT auto-select — the strict ambiguity gate is preserved', async () => {
+    let discoverArgs = null;
+    const discover = async (args) => { discoverArgs = args; return { status: 'discovered', url: DISCOVERED_SITE }; };
+    const decide = scriptedDecide([() => ({ action: 'done', ref: null, value: null, reason: 'done' })]);
+
+    await runBrowserAgent({
+      intent: { task: 'search', targetSite: { name: 'Daraz', url: null, needsConfirmation: false } },
+      page, decideNextAction: decide, discoverTargetSite: discover
+    });
+
+    assert.strictEqual(discoverArgs.autoSelectBest, false, 'an explicitly-named site keeps the strict ambiguity behavior unchanged');
+  });
+
   await browser.close();
 
   const failed = results.filter((r) => !r.ok);
