@@ -183,6 +183,116 @@ const run = async () => {
     await assert.rejects(() => runBrowserAgent({ page, decideNextAction: scriptedDecide([]) }), BrowserAgentError);
   });
 
+  // --- Generic target-site discovery (Phase 5) ----------------------------
+  // The agent's start-URL resolution is exercised with an INJECTED discover
+  // function (siteDiscovery is unit-tested separately in siteDiscovery.test.js),
+  // so these stay deterministic and offline while proving the branching:
+  // a null-URL named target triggers discovery; a trustworthy URL bypasses it;
+  // an ambiguous/unreachable outcome stops cleanly without running the loop;
+  // a model-guessed URL is handed to discovery as a seed; and a discovered URL
+  // feeds the existing decision loop and is recorded as the first step.
+
+  const DISCOVERED_SITE = encode(FORM_HTML);
+  const USER_SITE = encode('<html><body><p>user supplied site</p></body></html>');
+
+  await test('discovery: a named target with a null URL triggers discovery, and the discovered URL seeds + records the run', async () => {
+    let discoverArgs = null;
+    const discover = async (args) => { discoverArgs = args; return { status: 'discovered', url: DISCOVERED_SITE }; };
+    const decide = scriptedDecide([
+      (snapshot) => ({ action: 'input', ref: snapshot.elements.find((el) => el.tag === 'input').ref, value: 'microwave', reason: 'fill' }),
+      (snapshot) => ({ action: 'click', ref: snapshot.elements.find((el) => el.tag === 'button').ref, value: null, reason: 'submit' }),
+      () => ({ action: 'done', ref: null, value: null, reason: 'done' })
+    ]);
+
+    const result = await runBrowserAgent({
+      intent: { task: 'search for microwave', targetSite: { name: 'Walton', url: null } },
+      page, decideNextAction: decide, discoverTargetSite: discover
+    });
+
+    assert.ok(discoverArgs, 'discovery must be invoked when the URL is null but a name is present');
+    assert.strictEqual(discoverArgs.targetName, 'Walton');
+    assert.strictEqual(discoverArgs.seedUrl, null, 'no model URL to seed with here');
+    assert.strictEqual(result.success, true);
+    assert.strictEqual(result.steps[0].type, 'navigation');
+    assert.strictEqual(result.steps[0].url, DISCOVERED_SITE, 'the discovered URL must be recorded as the first navigation step so replay reproduces it');
+    assert.strictEqual(result.steps.length, 3, 'nav + input + click');
+  });
+
+  await test('discovery: an explicit user-supplied (trustworthy) URL bypasses discovery entirely', async () => {
+    let called = false;
+    const discover = async () => { called = true; return { status: 'discovered', url: 'about:blank' }; };
+    const decide = scriptedDecide([() => ({ action: 'done', ref: null, value: null, reason: 'done' })]);
+
+    const result = await runBrowserAgent({
+      intent: { task: 'x', targetSite: { name: 'Walton', url: USER_SITE, urlSource: 'user' } },
+      page, decideNextAction: decide, discoverTargetSite: discover
+    });
+
+    assert.strictEqual(called, false, 'a user-supplied URL must never trigger discovery');
+    assert.strictEqual(result.steps[0].url, USER_SITE, 'the trustworthy URL is navigated to directly');
+    assert.strictEqual(result.success, true);
+  });
+
+  await test('discovery: a legacy intent carrying a URL but no urlSource keeps the existing direct-navigation behavior', async () => {
+    let called = false;
+    const discover = async () => { called = true; return { status: 'unreachable', reason: 'should not run' }; };
+    const decide = scriptedDecide([() => ({ action: 'done', ref: null, value: null, reason: 'done' })]);
+
+    const result = await runBrowserAgent({
+      intent: { task: 'x', targetSite: { url: USER_SITE } }, // no urlSource, no name — pre-Phase-5 shape
+      page, decideNextAction: decide, discoverTargetSite: discover
+    });
+
+    assert.strictEqual(called, false, 'a legacy URL-only intent must behave exactly as before (direct navigation)');
+    assert.strictEqual(result.steps[0].url, USER_SITE);
+    assert.strictEqual(result.success, true);
+  });
+
+  await test('discovery: an AMBIGUOUS outcome stops the run cleanly and never consults the model', async () => {
+    const discover = async () => ({ status: 'ambiguous', candidates: [{ host: 'apollo.com' }, { host: 'apollo.io' }], reason: 'several matched' });
+    const decide = scriptedDecide([]); // any call throws "exhausted"
+
+    const result = await runBrowserAgent({
+      intent: { task: 'x', targetSite: { name: 'Apollo', url: null } },
+      page, decideNextAction: decide, discoverTargetSite: discover
+    });
+
+    assert.strictEqual(result.success, false);
+    assert.strictEqual(result.stopReason, 'target_ambiguous');
+    assert.strictEqual(decide.calls, 0, 'the model must never be consulted when the target itself is unresolved');
+    assert.strictEqual(result.steps.length, 0, 'no workflow steps are recorded when the target was never reached');
+    assert.ok(/apollo/i.test(result.message), 'the honest message should surface the candidate sites for the user to choose');
+  });
+
+  await test('discovery: an UNREACHABLE outcome stops the run cleanly with an honest reason', async () => {
+    const discover = async () => ({ status: 'unreachable', candidates: [], reason: 'no usable candidates' });
+    const decide = scriptedDecide([]);
+
+    const result = await runBrowserAgent({
+      intent: { task: 'x', targetSite: { name: 'Nonexistent Whatsit', url: null } },
+      page, decideNextAction: decide, discoverTargetSite: discover
+    });
+
+    assert.strictEqual(result.success, false);
+    assert.strictEqual(result.stopReason, 'target_unreachable');
+    assert.strictEqual(decide.calls, 0);
+  });
+
+  await test('discovery: a MODEL-guessed URL is handed to discovery as a seed, never navigated to blindly', async () => {
+    let discoverArgs = null;
+    const discover = async (args) => { discoverArgs = args; return { status: 'discovered', url: DISCOVERED_SITE }; };
+    const decide = scriptedDecide([() => ({ action: 'done', ref: null, value: null, reason: 'done' })]);
+
+    await runBrowserAgent({
+      intent: { task: 'x', targetSite: { name: 'Walton', url: 'https://model-guess.example/', urlSource: 'model' } },
+      page, decideNextAction: decide, discoverTargetSite: discover
+    });
+
+    assert.ok(discoverArgs, 'a model-sourced URL must go through discovery, not direct navigation');
+    assert.strictEqual(discoverArgs.seedUrl, 'https://model-guess.example/', 'the model guess is passed as a seed to VERIFY, not trusted outright');
+    assert.strictEqual(discoverArgs.targetName, 'Walton');
+  });
+
   await browser.close();
 
   const failed = results.filter((r) => !r.ok);

@@ -209,6 +209,37 @@ const run = async () => {
     assert.ok(intent.targetSite.confidence <= 0.3);
   });
 
+  // --- targetSite.urlSource (Phase 5 URL-trust classification) -------------
+  // Downstream (aiBrowserAgent) trusts a user-typed URL outright but treats a
+  // model-only URL as a guess to VERIFY. This proves the classification is by
+  // whether the URL's host is present in the command — no known-site list.
+
+  await test('urlSource is "user" when the URL host appears verbatim in the command', () => {
+    const intent = sanitizeIntent(
+      { targetSite: { name: 'FlightRadar24', url: 'https://www.flightradar24.com', confidence: 0.9 }, task: 'Search flights', parameters: [] },
+      { command: 'Create an API to search flights on flightradar24.com' }
+    );
+    assert.strictEqual(intent.targetSite.urlSource, 'user');
+  });
+
+  await test('urlSource is "model" when a URL is present but its host is nowhere in the command (a model guess)', () => {
+    const intent = sanitizeIntent(
+      { targetSite: { name: 'FlightRadar24', url: 'https://www.flightradar24.com', confidence: 0.9 }, task: 'Search flights', parameters: [] },
+      { command: 'Search for flights on FlightRadar24' } // brand named, but no .com typed → the URL is the model's
+    );
+    assert.strictEqual(intent.targetSite.urlSource, 'model', 'a URL the user never typed must not be treated as authoritative');
+  });
+
+  await test('urlSource is "none" when there is no URL, and defaults to "model" for a URL sanitized without a command', () => {
+    const noUrl = sanitizeIntent({ targetSite: { name: 'Walton', confidence: 0.8 }, task: 'Search', parameters: [] }, { command: 'find Walton water heaters' });
+    assert.strictEqual(noUrl.targetSite.url, null);
+    assert.strictEqual(noUrl.targetSite.urlSource, 'none');
+
+    // No command available (unit-isolated call): a present URL is conservatively 'model', never silently 'user'.
+    const noCommand = sanitizeIntent({ targetSite: { name: 'X', url: 'https://x.example', confidence: 0.6 }, task: 'Do X', parameters: [] });
+    assert.strictEqual(noCommand.targetSite.urlSource, 'model');
+  });
+
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${results.length - failed.length}/${results.length} passed`);
   if (failed.length) {

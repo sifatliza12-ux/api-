@@ -136,9 +136,17 @@ const run = async () => {
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${results.length - failed.length}/${results.length} passed`);
-  if (failed.length) {
-    process.exitCode = 1;
-  }
+
+  // runWorkflow (replayEngine.js) DELIBERATELY leaves its browser/context open
+  // on a SUCCESSFUL replay — that's the product's "watch the Run happen"
+  // behavior, not a leak to fix in the engine. But an open Playwright browser
+  // keeps Node's event loop alive, so this process would otherwise never exit
+  // after the two successful replays finish, and the run appears to hang even
+  // though every assertion already passed. The sibling replay e2e suites
+  // (replayEngine.e2e.test.js, recorderStableTarget.e2e.test.js) force-exit
+  // for exactly this reason; match that convention so the exit code (still
+  // reflecting pass/fail) is delivered instead of the process hanging.
+  process.exit(failed.length ? 1 : 0);
 };
 
 run();

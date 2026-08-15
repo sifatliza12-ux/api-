@@ -51,11 +51,80 @@ const escapeHtml = (str) => {
         .replace(/'/g, '&#39;');
 };
 
+// --- Extracted-results panel ------------------------------------------
+// Renders whatever structured dataset the backend returns — the `results`
+// object from /generate, or a Run/Test response — as a generic JSON panel
+// with an "N results captured" header and extraction metadata. Deliberately
+// field-agnostic: it never looks at individual keys, so any record shape
+// (products, flights, hotels, anything) renders identically. Never fabricates
+// data — an empty/absent dataset shows an honest no-results state.
+
+function normalizeResults(src) {
+    if (!src) return null;
+    const data = Array.isArray(src.data) ? src.data : [];
+    // /generate returns totalFound/truncated at the top level; a Run/Test
+    // response nests them under `execution` — accept either, generically.
+    const totalFound = Number.isFinite(src.totalFound)
+        ? src.totalFound
+        : (src.execution && Number.isFinite(src.execution.totalFound))
+            ? src.execution.totalFound
+            : data.length;
+    const truncated = typeof src.truncated === 'boolean'
+        ? src.truncated
+        : Boolean(src.execution && src.execution.truncated);
+    const confidence = Number.isFinite(src.confidence) ? src.confidence : 0;
+    const method = src.extractionMethod || src.method || 'none';
+    const source = src.source || src.finalUrl || null;
+    return { data, totalFound, truncated, confidence, method, source };
+}
+
+function resultsDatasetJson() {
+    const n = normalizeResults(lastResults);
+    return n && n.data.length ? JSON.stringify(n.data, null, 2) : '';
+}
+
+function resultsPanelHtml(n) {
+    if (!n || !Array.isArray(n.data) || n.data.length === 0) {
+        return `
+            <div class="ai-results-panel ai-results-panel--empty">
+                <p class="ai-results-count">No results captured</p>
+                <p class="ai-results-empty-note">ForgeFlow reached the site but didn't detect a structured result set on the final page. Try <strong>Run API</strong> with different parameters, or refine your request with a follow-up message.</p>
+            </div>`;
+    }
+    const pct = Math.round((n.confidence || 0) * 100);
+    const meta = [
+        `Method: ${escapeHtml(n.method)}`,
+        `Confidence: ${pct}%`,
+        n.source ? `Source: ${escapeHtml(n.source)}` : null,
+        n.truncated ? `Truncated — showing ${n.data.length} of ${n.totalFound}` : null
+    ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+    return `
+        <div class="ai-results-panel">
+            <div class="ai-results-header">
+                <span class="ai-results-count">${n.totalFound} result${n.totalFound === 1 ? '' : 's'} captured</span>
+                <div class="ai-results-actions">
+                    <button type="button" class="btn btn-secondary" id="copy-results-btn">Copy JSON</button>
+                    <button type="button" class="btn btn-secondary" id="download-results-btn">Download JSON</button>
+                </div>
+            </div>
+            <p class="ai-results-meta">${meta}</p>
+            <pre class="ai-results-json">${escapeHtml(JSON.stringify(n.data, null, 2))}</pre>
+        </div>`;
+}
+
+function wireResultsPanel(nameForFile) {
+    const copyBtn = document.getElementById('copy-results-btn');
+    const downloadBtn = document.getElementById('download-results-btn');
+    if (copyBtn) copyBtn.addEventListener('click', () => copyJson(resultsDatasetJson()));
+    if (downloadBtn) downloadBtn.addEventListener('click', () => downloadJson(resultsDatasetJson(), `${nameForFile || 'forgeflow'}-results`));
+}
+
 // --- Module state -----------------------------------------------------
 
 let authHeaders = {};
 let session = null;           // latest formatSession()-shaped object from the backend
 let lastGenerateExtra = null; // { myApiId, endpoint, method } from the most recent successful /generate response
+let lastResults = null;       // extracted dataset from the most recent /generate response (or Run/Test), shown in the results panel
 // The just-submitted text, shown immediately on Send — session.messages
 // (server state) only reflects it once the backend round-trip completes,
 // which can be a while, so this is what makes the message appear at once
@@ -305,6 +374,7 @@ async function renderResultArea() {
         <p class="ai-result-heading">✓ API generated successfully.</p>
         <div class="ai-confirm-row"><span class="ai-confirm-row-label">Name</span><span class="ai-confirm-row-value">${escapeHtml(myApi.name)}</span></div>
         <div class="ai-confirm-row"><span class="ai-confirm-row-label">Endpoint</span><span class="ai-confirm-row-value">${escapeHtml(myApi.method)} ${escapeHtml(myApi.endpoint)}</span></div>
+        <div id="ai-results-wrap">${resultsPanelHtml(normalizeResults(lastResults))}</div>
         <div id="result-param-form">${fieldsHtml}</div>
         <div class="ai-result-actions">
             <button type="button" class="btn btn-primary" id="run-api-btn">Run API</button>
@@ -318,6 +388,7 @@ async function renderResultArea() {
         <pre class="ai-json-block">${escapeHtml(jsonText)}</pre>
     `;
 
+    wireResultsPanel(myApi.name);
     document.getElementById('run-api-btn').addEventListener('click', () => handleRunOrTest(myApi, 'run'));
     document.getElementById('test-api-btn').addEventListener('click', () => handleRunOrTest(myApi, 'test'));
     document.getElementById('publish-api-btn').addEventListener('click', () => handlePublish(myApi));
@@ -371,6 +442,16 @@ async function handleRunOrTest(myApi, mode) {
         if (response.ok && data.success) {
             resultEl.classList.add('run-result--success');
             resultEl.innerHTML = `<div class="run-status">✓ ${mode === 'run' ? 'Run' : 'Test'} succeeded</div><pre class="ai-json-block">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+            // Refresh the headline results panel with this run's freshly
+            // extracted dataset, so editing a parameter and re-running updates
+            // the displayed results (demo parity). The raw run output above is
+            // left exactly as before — existing behavior is unchanged.
+            lastResults = data;
+            const wrap = document.getElementById('ai-results-wrap');
+            if (wrap) {
+                wrap.innerHTML = resultsPanelHtml(normalizeResults(lastResults));
+                wireResultsPanel(myApi.name);
+            }
         } else {
             resultEl.classList.add('run-result--error');
             resultEl.textContent = `✗ ${data.message || `${mode === 'run' ? 'Run' : 'Test'} failed (HTTP ${response.status}).`}`;
@@ -441,6 +522,7 @@ function downloadJson(text, name) {
 function resetForNewRequest() {
     session = null;
     lastGenerateExtra = null;
+    lastResults = null;
     siteConfirmed = false;
     transientError = null;
     pendingUserMessage = null;
@@ -558,6 +640,11 @@ async function handleGenerate() {
             applyServerSession(data);
             if (response.ok && data.success) {
                 lastGenerateExtra = { myApiId: data.myApiId, endpoint: data.endpoint, method: data.method };
+                // Real first-run results the backend extracted during generation
+                // (see aiCreatorController /generate). null when nothing
+                // structured was found — the panel then shows an honest empty
+                // state rather than fabricated data.
+                lastResults = data.results || null;
             } else {
                 // Failure detail is already in the merged session's own
                 // system/error chat message + status:'failed', rendered by

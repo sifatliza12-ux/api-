@@ -6,14 +6,16 @@
 // only, via this file alone — no extension/frontend file reads, forwards, or
 // otherwise ever sees it.
 //
-// Mirrors ollamaProvider.js's structure closely (same two system prompts,
-// same JSON-object prompting style, same validated-action approach via
+// Mirrors ollamaProvider.js's structure closely (two system prompts, same
+// JSON-object prompting style, same validated-action approach via
 // ollamaResponseUtils.js — imported and reused, not reimplemented) since
 // both are JSON-prompted chat-completions APIs, unlike anthropicProvider.js's
-// tool-calling shape. The prompt text is intentionally duplicated from
-// ollamaProvider.js rather than extracted into a shared module: neither file
-// exports its prompts today, and ollamaProvider.js is a protected/working
-// file not to be modified for this change. decideNextAction's PROMPT
+// tool-calling shape. The action prompt is still identical to Ollama's; the
+// INTENT prompt has intentionally DIVERGED (see its own comment below) to
+// strengthen target-site resolution for this active cloud provider. The
+// prompt text is otherwise kept local rather than extracted into a shared
+// module: neither file exports its prompts today, and ollamaProvider.js is a
+// protected/working file not to be modified for this change. decideNextAction's PROMPT
 // COMPACTION (see MAX_PROMPT_ELEMENTS etc. below), by contrast, is
 // deliberately Groq-specific and NOT a copy of ollamaProvider.js's own
 // (uncompacted) version — added after a real "HTTP 413" failure: Groq's
@@ -155,9 +157,19 @@ const callGroqJson = async ({ systemPrompt, userPrompt, context }) => {
 };
 
 // --- parseIntent ------------------------------------------------------
-// Verbatim copy of ollamaProvider.js's INTENT_SYSTEM_PROMPT — identical
-// contract, identical rules against fabricating a target-site URL,
-// identical generic (non-task-specific) parameter extraction instructions.
+// This started as a verbatim copy of ollamaProvider.js's
+// INTENT_SYSTEM_PROMPT and INTENTIONALLY diverges from it now: the
+// "Target site" guidance block below was added to fix a real-world
+// weakness where a clearly named site/brand (e.g. "search laptops on
+// Daraz", "find <brand> water heaters") was being flattened into a generic
+// "E-commerce site" with a null URL, needlessly triggering the site
+// confirmation step. Groq is the active cloud provider whose output this
+// change targets; ollamaProvider.js is a protected file for this change and
+// is deliberately left as-is, so the two prompts are no longer identical.
+// The contract (same JSON shape, same "never fabricate a URL" safety rule)
+// is unchanged — nlIntentParser.js's sanitizeIntent remains the single
+// validator for every provider. The added rules are generic (they name no
+// specific brand or site) and never instruct inventing a URL.
 
 const INTENT_SYSTEM_PROMPT = `You are the natural-language understanding layer of a web-automation API builder called ForgeFlow. A user describes, in plain English, a task they want turned into a callable API (e.g. "search for flights"). Your ONLY job is to extract a structured intent from their command — you are NOT being asked to browse the web, verify any URL, or take any action.
 
@@ -168,9 +180,16 @@ Respond with ONLY a single JSON object, no prose, no markdown fences, matching e
   "parameters": [ { "name": string, "type": "text" | "number" | "date" | "select" | "boolean", "value": string, "label": string, "description": string } ]
 }
 
+Target site (read carefully — this is where mistakes commonly happen):
+- "targetSite" is the SPECIFIC website, brand, marketplace, or service the automation should run against. It is NOT a restatement of the task, and NOT the generic category of site the task would use.
+- If the request names a website, marketplace, or online service (e.g. "on Amazon", "search Daraz", "flights on FlightRadar24"), THAT named site is the target: put its name in "name" and use a HIGH confidence — the user pointed at the target explicitly.
+- If the request names no website but clearly centers on a specific BRAND's own products — the user is searching for or buying that brand's goods (e.g. "cheapest Samsung TV", "Dyson vacuum under 50000") — treat that brand as the target and put the brand name in "name". Use a reasonably high confidence (a little lower than an explicitly named website): the target entity is clear even though the user gave a brand rather than a URL.
+- NEVER replace a specific, named target with a generic category such as "E-commerce site", "shopping website", "online store", "a marketplace", or "a travel site". Always prefer the specific entity the user actually named over any generic description of it.
+- ONLY when the request names no specific site, brand, marketplace, or service at all (e.g. "find water heaters under 10000 taka") should "name" be generic or empty — and then use a LOW confidence so the user is asked to confirm the site.
+
 Rules:
-- "url": only include a URL you are reasonably confident is real. If you are not sure, set it to null and keep confidence low — never invent or guess a URL just to fill the field.
-- "confidence": your honest confidence (0 to 1) that targetSite is what the user actually meant. Use a LOW value if the user did not clearly name one specific site, or if several different sites could plausibly match.
+- "url": only include a URL you are genuinely confident is the correct real address of the target. If you know the target's name but are unsure of its exact URL, set "url" to null and KEEP the specific name — never invent, guess, or approximate a URL, and never fill in a URL just to raise confidence or skip a confirmation step.
+- "confidence": your honest confidence (0 to 1) that "name" correctly identifies the site or brand the user meant. This is about the target's IDENTITY, not whether you know its URL — a clearly named site or brand can be high confidence even with a null URL. Use a LOW value only when the user did not clearly point at one specific site or brand, or when several unrelated sites could equally match.
 - "parameters": only include inputs actually implied by the user's command — do not invent extra fields the user never mentioned.
 - Output ONLY the JSON object. No explanation, no markdown code fences, no extra text before or after it.`;
 

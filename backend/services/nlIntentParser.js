@@ -125,12 +125,43 @@ const sanitizeConfidence = (raw) => {
   return Math.min(1, Math.max(0, num));
 };
 
+// Classifies WHERE a target URL came from, so a downstream consumer (the
+// browser agent) can decide how far to trust it BEFORE navigating anywhere:
+//   'user'  — the URL's own host appears verbatim in the user's command, so
+//             the user effectively typed it: authoritative.
+//   'model' — a URL is present but its host is nowhere in what the user wrote,
+//             so only the model produced it: a GUESS that must be verified
+//             against the real target before it is trusted, never navigated to
+//             blindly (see aiBrowserAgent's discovery/verification path).
+//   'none'  — no URL at all.
+// Deliberately generic: it matches on the URL's own host string only, with no
+// list of known sites, brands, or domains anywhere in it.
+const classifyUrlSource = (url, command) => {
+  if (!url) return 'none';
+  if (typeof command !== 'string' || !command) return 'model';
+  let host;
+  try {
+    host = new URL(url).host.toLowerCase().replace(/^www\./, '');
+  } catch (error) {
+    return 'model';
+  }
+  if (!host) return 'model';
+  return command.toLowerCase().includes(host) ? 'user' : 'model';
+};
+
 // Validates and sanitizes the raw tool_use input from Claude into the strict
 // intent shape this module promises callers. Throws IntentValidationError
 // only for shapes that cannot be safely repaired (see the class comment
 // above); everything else is coerced into a safe value, with a console.warn
 // left behind so a genuinely bad model response is still visible in logs.
-const sanitizeIntent = (rawInput) => {
+//
+// `command` (optional) is the original natural-language text the intent was
+// parsed from. It is used ONLY to classify targetSite.url's trust source
+// (see classifyUrlSource) — never to alter the parsed values themselves — so
+// callers that don't have it (e.g. unit tests exercising sanitize in
+// isolation) still get identical name/url/confidence, just a conservative
+// 'model'/'none' url source.
+const sanitizeIntent = (rawInput, { command } = {}) => {
   if (!rawInput || typeof rawInput !== 'object' || Array.isArray(rawInput)) {
     throw new IntentValidationError('Model did not return a structured intent object.', { rawInput });
   }
@@ -192,6 +223,7 @@ const sanitizeIntent = (rawInput) => {
     targetSite: {
       name: siteName,
       url,
+      urlSource: classifyUrlSource(url, command),
       confidence,
       needsConfirmation: confidence < SITE_CONFIRMATION_CONFIDENCE_THRESHOLD
     },
@@ -210,7 +242,7 @@ const sanitizeIntent = (rawInput) => {
 const parseIntent = async (nlCommand) => {
   const provider = getProvider();
   const rawIntent = await provider.parseIntent(nlCommand);
-  return sanitizeIntent(rawIntent);
+  return sanitizeIntent(rawIntent, { command: nlCommand });
 };
 
 module.exports = {

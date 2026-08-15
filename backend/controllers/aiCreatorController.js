@@ -292,6 +292,24 @@ const generateWorkflow = async (req, res) => {
     sessionStore.appendMessage(session.id, { role: 'assistant', type: 'workflow_generated', workflowId: workflow.workflowId, myApiId: myApiRecord.id, at: nowIso() });
     const finalSession = sessionStore.setStatus(session.id, 'completed');
 
+    // The browser agent extracts structured records from the final results
+    // page it reached (see aiBrowserAgent.js — the SAME extractPageData Run/
+    // replay use), so a successful generation can return REAL first results
+    // in the same response, matching the demo's "request -> results" journey
+    // without a second, separate run. Additive to the response contract: null
+    // when nothing structured was found (an honest empty result, never
+    // fabricated). Re-runs with edited parameters still go through the
+    // existing Run API/replay path unchanged.
+    const extraction = result.extraction || null;
+    const results = extraction ? {
+      data: Array.isArray(extraction.data) ? extraction.data : [],
+      totalFound: extraction.totalFound ?? (Array.isArray(extraction.data) ? extraction.data.length : 0),
+      confidence: extraction.confidence ?? 0,
+      extractionMethod: extraction.method || 'none',
+      truncated: Boolean(extraction.truncated),
+      source: result.finalUrl || null
+    } : null;
+
     return res.json({
       success: true,
       ...formatSession(finalSession),
@@ -299,7 +317,8 @@ const generateWorkflow = async (req, res) => {
       myApiId: myApiRecord.id,
       endpoint: myApiRecord.endpoint,
       method: myApiRecord.method,
-      stepCount: workflow.steps.length
+      stepCount: workflow.steps.length,
+      results
     });
   } catch (err) {
     console.error('[Backend] AI creator generateWorkflow failed', err);

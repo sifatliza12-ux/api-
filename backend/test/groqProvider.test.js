@@ -156,6 +156,105 @@ const run = async () => {
     });
   });
 
+  // --- target-site resolution (regression) --------------------------------
+  // Real-world bug: "Create an API to find Walton water heaters under 10,000
+  // Taka" resolved to targetSite.name = "E-commerce site" / url = null, so
+  // ForgeFlow needlessly asked the user to confirm the site even though a
+  // specific brand was clearly named. Root cause: the parseIntent PROMPT gave
+  // the model no instruction to treat a named site/brand as the target or to
+  // avoid generic categories — so it described the KIND of site the task
+  // needs ("E-commerce site") instead of the entity the user named.
+  //
+  // The live model can't be exercised offline, so these tests split the
+  // guarantee in two: (a) the prompt-content test pins that the strengthened
+  // instruction is actually present, and (b) the pipeline tests feed the
+  // response a prompt-following model returns and prove parse->sanitize
+  // preserves a specific named target, never fabricates a URL, and still asks
+  // for confirmation when the target is genuinely unspecified.
+
+  const captureSystemPrompt = async (command) => {
+    let systemPrompt = null;
+    await withMockedChatContent(
+      JSON.stringify({ targetSite: { name: 'X', url: null, confidence: 0.5 }, task: 'do', parameters: [] }),
+      async () => { await groqProvider.parseIntent(command); },
+      { captureRequest: (req) => { systemPrompt = JSON.parse(req.options.body).messages[0].content; } }
+    );
+    return systemPrompt;
+  };
+
+  await test('parseIntent prompt: instructs treating a named site/brand as the target, forbids generic categories, keeps the no-fabricated-URL rule', async () => {
+    const prompt = await captureSystemPrompt('Search laptops on Daraz.');
+    assert.ok(/target site/i.test(prompt), 'expected an explicit target-site guidance section');
+    assert.ok(/e-commerce site/i.test(prompt), 'expected the prompt to name generic categories as what NOT to output');
+    assert.ok(/brand/i.test(prompt), 'expected guidance about treating a named brand as the target');
+    assert.ok(/never invent/i.test(prompt) && /url/i.test(prompt), 'expected the never-fabricate-a-URL safety rule to remain');
+    assert.ok(/specific/i.test(prompt), 'expected guidance to prefer the specific entity over a generic description');
+  });
+
+  await test('parseIntent (Walton regression): a clearly named brand is preserved as target, URL stays null, no needless confirmation', async () => {
+    await withMockedChatContent(JSON.stringify({
+      targetSite: { name: 'Walton', url: null, confidence: 0.82 },
+      task: 'Search for water heaters',
+      parameters: [
+        { name: 'brand', type: 'text', value: 'Walton', label: 'Brand' },
+        { name: 'productType', type: 'text', value: 'water heater', label: 'Product Type' },
+        { name: 'maxPrice', type: 'number', value: '10000', label: 'Maximum Price' }
+      ]
+    }), async () => {
+      const intent = sanitizeIntent(await groqProvider.parseIntent('Create an API to find Walton water heaters under 10000 taka'));
+      assert.strictEqual(intent.targetSite.name, 'Walton');
+      assert.notStrictEqual(intent.targetSite.name, 'E-commerce site', 'a specific named brand must not collapse into a generic category');
+      assert.strictEqual(intent.targetSite.url, null, 'URL must remain null, never fabricated');
+      assert.strictEqual(intent.targetSite.needsConfirmation, false, 'a confidently identified target should not force confirmation');
+      assert.strictEqual(intent.parameters.length, 3);
+    });
+  });
+
+  await test('parseIntent (Daraz regression): an explicitly named marketplace is preserved with no fabricated URL', async () => {
+    await withMockedChatContent(JSON.stringify({
+      targetSite: { name: 'Daraz', url: null, confidence: 0.88 },
+      task: 'Search for laptops',
+      parameters: [
+        { name: 'productType', type: 'text', value: 'laptop', label: 'Product Type' },
+        { name: 'maxPrice', type: 'number', value: '80000', label: 'Maximum Price' }
+      ]
+    }), async () => {
+      const intent = sanitizeIntent(await groqProvider.parseIntent('Search laptops on Daraz under 80000 taka'));
+      assert.strictEqual(intent.targetSite.name, 'Daraz');
+      assert.strictEqual(intent.targetSite.url, null, 'URL must remain null, never fabricated to a guessed TLD');
+      assert.strictEqual(intent.targetSite.needsConfirmation, false);
+    });
+  });
+
+  await test('parseIntent (FlightRadar24 regression): an explicitly named site keeps its name AND its known real URL', async () => {
+    await withMockedChatContent(JSON.stringify({
+      targetSite: { name: 'FlightRadar24', url: 'https://www.flightradar24.com', confidence: 0.92 },
+      task: 'Search for flights',
+      parameters: []
+    }), async () => {
+      const intent = sanitizeIntent(await groqProvider.parseIntent('Search for flights on FlightRadar24'));
+      assert.strictEqual(intent.targetSite.name, 'FlightRadar24');
+      assert.strictEqual(intent.targetSite.url, 'https://www.flightradar24.com');
+      assert.strictEqual(intent.targetSite.needsConfirmation, false);
+    });
+  });
+
+  await test('parseIntent (unspecified target): a request naming no site or brand stays low-confidence and still asks for confirmation — safety preserved', async () => {
+    await withMockedChatContent(JSON.stringify({
+      targetSite: { name: 'online store', url: null, confidence: 0.2 },
+      task: 'Search for water heaters',
+      parameters: [
+        { name: 'productType', type: 'text', value: 'water heater', label: 'Product Type' },
+        { name: 'maxPrice', type: 'number', value: '10000', label: 'Maximum Price' }
+      ]
+    }), async () => {
+      const intent = sanitizeIntent(await groqProvider.parseIntent('Find water heaters under 10000 taka'));
+      assert.strictEqual(intent.targetSite.url, null, 'no URL should be fabricated for an unspecified target');
+      assert.ok(intent.targetSite.confidence < 0.7, 'an unspecified target must stay below the confirmation threshold');
+      assert.strictEqual(intent.targetSite.needsConfirmation, true, 'confirmation must still happen when the site is genuinely unspecified');
+    });
+  });
+
   // --- decideNextAction ----------------------------------------------------
 
   await test('decideNextAction: a valid click action resolves successfully', async () => {

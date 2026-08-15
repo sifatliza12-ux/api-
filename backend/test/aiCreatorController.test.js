@@ -364,7 +364,10 @@ const run = async () => {
       }
     ];
     browserAgent.runBrowserAgent = async () => ({
-      success: true, steps: agentSteps, history: [], finalUrl: 'https://www.flightradar24.com/results', finalTitle: 'Results'
+      success: true, steps: agentSteps, history: [], finalUrl: 'https://www.flightradar24.com/results', finalTitle: 'Results',
+      // Phase 6: the agent captures real structured results from the final
+      // page it reached; the controller must surface them in the response.
+      extraction: { data: [{ title: 'Flight A' }, { title: 'Flight B' }], totalFound: 2, confidence: 0.7, method: 'dom', truncated: false }
     });
 
     const req = { params: { id: sessionId }, user };
@@ -379,6 +382,16 @@ const run = async () => {
     assert.strictEqual(res.body.endpoint, `/api/workflows/${res.body.workflowId}/run`);
     assert.strictEqual(res.body.method, 'POST');
     assert.strictEqual(res.body.stepCount, 2);
+
+    // Phase 6: a successful generation returns the REAL first-run results the
+    // agent extracted, in the same response (demo-equivalent request ->
+    // results), rather than requiring a separate run just to see anything.
+    assert.ok(res.body.results, 'the generate response should carry first-run extraction results');
+    assert.strictEqual(res.body.results.data.length, 2);
+    assert.strictEqual(res.body.results.totalFound, 2);
+    assert.strictEqual(res.body.results.extractionMethod, 'dom');
+    assert.strictEqual(res.body.results.source, 'https://www.flightradar24.com/results');
+
     createdWorkflowIds.push(res.body.workflowId);
     createdMyApiIds.push(res.body.myApiId);
 

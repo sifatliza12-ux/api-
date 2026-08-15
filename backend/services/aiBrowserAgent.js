@@ -31,6 +31,8 @@ const { buildPageSnapshot } = require('./pageSnapshotBuilder');
 const { detectPageBlock } = require('./antiBotDetector');
 const { locatorFromCandidate, dismissCommonOverlays, waitForPageStability } = require('./replayEngine');
 const { getProvider } = require('./aiProviders');
+const siteDiscovery = require('./siteDiscovery');
+const { extractPageData } = require('./extraction');
 
 class BrowserAgentError extends Error {
   constructor(message, details) {
@@ -333,6 +335,32 @@ const actionToRecordedEvent = (action, snapshot) => {
   return { type: 'click', value: element?.name || null, selector, locators, meta: null, url, pageTitle, timestamp };
 };
 
+// Honest, user-facing messages for the two discovery outcomes that stop a
+// run before the loop begins. Both invite the user to reply with the exact
+// site/URL — which the existing follow-up path (aiCreatorController.addMessage
+// -> re-parse) turns into a user-supplied, authoritative URL that bypasses
+// discovery entirely on the next attempt. No candidate is ever silently
+// chosen; the candidates are surfaced so the user can decide.
+const summarizeCandidates = (candidates) => (candidates || [])
+  .slice(0, 3)
+  .map((c) => c.host || c.url)
+  .filter(Boolean)
+  .join(', ');
+
+const buildAmbiguityMessage = (targetName, outcome) => {
+  const named = targetName ? `"${targetName}"` : 'the requested target';
+  const list = summarizeCandidates(outcome && outcome.candidates);
+  return list
+    ? `ForgeFlow couldn't confidently tell which website you meant for ${named}. Closest matches: ${list}. Reply with the exact website name or its URL to continue.`
+    : `ForgeFlow couldn't confidently identify a website for ${named}. Reply with the exact website name or its URL to continue.`;
+};
+
+const buildUnreachableMessage = (targetName, outcome) => {
+  const named = targetName ? `"${targetName}"` : 'the requested target';
+  const why = outcome && outcome.reason ? ` (${outcome.reason})` : '';
+  return `ForgeFlow couldn't reach a website for ${named}${why}. Reply with the exact website name or its URL to continue.`;
+};
+
 // Runs the agent loop to completion (done/stop/blocked/maxSteps) and
 // returns a result — never throws for an ordinary in-page failure (a
 // blocked page, the model stopping, running out of steps), NOR for a
@@ -350,13 +378,16 @@ const actionToRecordedEvent = (action, snapshot) => {
 // self-contained convention for real callers (i.e. the controller).
 // `decideNextAction`, when provided, overrides the active AIProvider's
 // implementation — used by tests to script a deterministic decision
-// sequence without depending on a real model.
-const runBrowserAgent = async ({ intent, maxSteps = DEFAULT_MAX_STEPS, page: injectedPage, decideNextAction: injectedDecideNextAction } = {}) => {
+// sequence without depending on a real model. `discoverTargetSite`,
+// likewise, overrides siteDiscovery.discoverTargetSite so tests exercise the
+// resolve-start-URL branches against deterministic fixtures with no network.
+const runBrowserAgent = async ({ intent, maxSteps = DEFAULT_MAX_STEPS, page: injectedPage, decideNextAction: injectedDecideNextAction, discoverTargetSite: injectedDiscover } = {}) => {
   if (!intent || typeof intent !== 'object') {
     throw new BrowserAgentError('runBrowserAgent requires a structured intent.');
   }
 
   const decide = injectedDecideNextAction || getProvider().decideNextAction;
+  const discover = injectedDiscover || siteDiscovery.discoverTargetSite;
 
   let browser = null;
   let page = injectedPage;
@@ -374,19 +405,6 @@ const runBrowserAgent = async ({ intent, maxSteps = DEFAULT_MAX_STEPS, page: inj
     // caller, not replayed directly.
     const steps = [];
 
-    // The initial navigation to the confirmed target site MUST itself be
-    // the first recorded event — exactly like a human recording always
-    // starts with one (see content.js). Without this, a replay of the
-    // saved workflow would start from about:blank and every subsequent
-    // step would fail to find anything, since only ACTIONS TAKEN INSIDE
-    // the decision loop were ever being recorded before.
-    const startUrl = intent.targetSite?.url;
-    if (startUrl) {
-      await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: ACTION_TIMEOUT_MS });
-      await waitForPageStability(page, 3000);
-      await dismissCommonOverlays(page).catch(() => null);
-      steps.push({ type: 'navigation', value: startUrl, url: startUrl, selector: null, locators: null, meta: null, pageTitle: await page.title().catch(() => null), timestamp: new Date().toISOString() });
-    }
     const finalInfo = async (extra) => ({
       steps,
       history,
@@ -394,6 +412,54 @@ const runBrowserAgent = async ({ intent, maxSteps = DEFAULT_MAX_STEPS, page: inj
       finalTitle: await page.title().catch(() => ''),
       ...extra
     });
+
+    // Resolve a trustworthy starting URL for the target site, then record the
+    // navigation to it as the first event — exactly like a human recording
+    // always starts with one (see content.js). Without a recorded start,
+    // replay would begin from about:blank and every subsequent step would
+    // fail to find anything.
+    //
+    // Trust ladder (see nlIntentParser.classifyUrlSource + siteDiscovery.js):
+    //   * urlSource 'user' — or a legacy intent that carries a url but no
+    //     source at all — is a URL the user effectively typed: authoritative,
+    //     navigated to directly (the pre-existing direct-URL behavior,
+    //     unchanged).
+    //   * urlSource 'model' — a URL only the model guessed — is NEVER trusted
+    //     blindly: it is handed to discovery as a seed that must verify first.
+    //   * no url but a target NAME — discovery searches for the name, ranks
+    //     candidates, and verifies the winner on the live page before
+    //     committing. Ambiguous/unreachable outcomes stop the run cleanly with
+    //     an honest reason rather than guessing.
+    //   * neither a url nor a name — nothing to resolve; the seed navigation
+    //     is skipped and the decision loop simply works from the current page
+    //     (also unchanged legacy behavior, and what the tests rely on).
+    const site = intent.targetSite || {};
+    const targetName = (site.name || '').trim();
+    const trustedUrl = (site.url && site.urlSource !== 'model') ? site.url : null;
+    const seedUrl = (site.url && site.urlSource === 'model') ? site.url : null;
+
+    let startUrl = trustedUrl;
+    if (!startUrl && (targetName || seedUrl)) {
+      const outcome = await discover({ page, targetName, task: intent.task, seedUrl });
+      if (outcome.status === 'discovered') {
+        startUrl = outcome.url;
+      } else if (outcome.status === 'ambiguous') {
+        return finalInfo({ success: false, stopped: true, stopReason: 'target_ambiguous', message: buildAmbiguityMessage(targetName, outcome), candidates: outcome.candidates || [] });
+      } else if (outcome.status === 'disabled') {
+        // Discovery switched off by configuration — fall back to the legacy
+        // behavior of letting the loop start from wherever the page already is.
+      } else {
+        // unreachable / no_query
+        return finalInfo({ success: false, stopped: true, stopReason: 'target_unreachable', message: buildUnreachableMessage(targetName, outcome), candidates: outcome.candidates || [] });
+      }
+    }
+
+    if (startUrl) {
+      await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: ACTION_TIMEOUT_MS });
+      await waitForPageStability(page, 3000);
+      await dismissCommonOverlays(page).catch(() => null);
+      steps.push({ type: 'navigation', value: startUrl, url: startUrl, selector: null, locators: null, meta: null, pageTitle: await page.title().catch(() => null), timestamp: new Date().toISOString() });
+    }
 
     for (let stepIndex = 0; stepIndex < maxSteps; stepIndex += 1) {
       const block = await detectPageBlock(page).catch(() => ({ blocked: false }));
@@ -406,7 +472,26 @@ const runBrowserAgent = async ({ intent, maxSteps = DEFAULT_MAX_STEPS, page: inj
       history.push(action);
 
       if (action.action === 'done') {
-        return finalInfo({ success: true, stopped: false, stopReason: null, message: null });
+        // The task just completed, so THIS page is the results page the user
+        // actually asked for — extract structured records from it now, while
+        // the live page is still open, using the EXISTING, shared extraction
+        // pipeline (the same extractPageData that Run/replay already use — not
+        // a second implementation). This is what turns "the agent finished
+        // navigating" into "here are the real results". workflowId is null
+        // (no workflow row exists yet at generation time, so there is no
+        // stored schema to reconcile against); extractionHint is whatever the
+        // intent carried, if anything. Never throws and never fails the run:
+        // an empty/failed extraction still returns a successful agent result
+        // with empty data, honestly.
+        const extraction = await extractPageData({
+          page,
+          workflowId: null,
+          extractionHint: intent.extractionHint || null
+        }).catch((error) => {
+          console.warn('[Backend][aiBrowserAgent] extraction on done failed, returning empty:', error.message);
+          return { data: [], confidence: 0, method: 'error', truncated: false, totalFound: 0 };
+        });
+        return finalInfo({ success: true, stopped: false, stopReason: null, message: null, extraction });
       }
       if (action.action === 'stop') {
         return finalInfo({ success: false, stopped: true, stopReason: 'model_stop', message: action.reason || 'The AI agent stopped before completing the task.' });
