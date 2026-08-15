@@ -7,7 +7,7 @@
 // Run with: node backend/test/groqProvider.test.js
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 process.env.GROQ_API_KEY = process.env.GROQ_API_KEY || 'test-key-not-real';
-process.env.GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+process.env.GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
 
 const assert = require('assert');
 const { sanitizeIntent, IntentValidationError } = require('../services/nlIntentParser');
@@ -276,6 +276,117 @@ const run = async () => {
   await test('isAvailable: reports available once both GROQ_API_KEY and GROQ_MODEL are set', async () => {
     const result = await groqProvider.isAvailable();
     assert.strictEqual(result.available, true);
+  });
+
+  // --- HTTP 413 diagnosis/compaction (regression) --------------------------
+  // Reproduces the actual reported failure: "Groq at .../v1 responded with
+  // HTTP 413" — caused by a complex real page's full interactive-element
+  // snapshot being embedded uncompacted in decideNextAction's prompt.
+
+  await test('decideNextAction: an oversized snapshot is compacted — capped element count, off-screen elements dropped first, long fields truncated, null fields omitted', async () => {
+    const elements = [];
+    for (let i = 0; i < 100; i += 1) {
+      elements.push({
+        ref: `inview${i}`, tag: 'button', type: null, role: 'button',
+        name: `In viewport button number ${i} with a very long descriptive accessible name that keeps going well past sixty characters`,
+        label: null, placeholder: null, value: null, sensitive: false, checked: null, inViewport: true
+      });
+    }
+    for (let i = 0; i < 100; i += 1) {
+      elements.push({
+        ref: `offscreen${i}`, tag: 'a', type: null, role: 'link', name: `Off-screen link ${i}`,
+        label: null, placeholder: null, value: null, sensitive: false, checked: null, inViewport: false
+      });
+    }
+    const bigSnapshot = { url: 'https://example.com/big-page', title: 'Big Page', elements };
+
+    let captured = null;
+    await withMockedChatContent(
+      JSON.stringify({ action: 'done', ref: null, value: null, reason: 'ok' }),
+      async () => { await groqProvider.decideNextAction(bigSnapshot, sampleIntent, []); },
+      { captureRequest: (req) => { captured = req; } }
+    );
+
+    const parsedBody = JSON.parse(captured.options.body);
+    const userPrompt = parsedBody.messages[1].content;
+
+    // Off-screen elements are dropped FIRST — safely recoverable, since the
+    // agent re-observes a fresh snapshot every loop iteration; nothing here
+    // is a permanent, one-shot loss.
+    assert.ok(!userPrompt.includes('"offscreen0"'), 'off-screen elements must be dropped before in-viewport ones');
+    assert.ok(userPrompt.includes('"inview0"'), 'in-viewport elements must be kept');
+
+    const refCount = (userPrompt.match(/"ref":"inview\d+"/g) || []).length;
+    assert.ok(refCount > 0 && refCount <= 60, `expected at most 60 elements in the prompt, found ${refCount}`);
+
+    // Long fields truncated: the full untruncated string must not appear.
+    assert.ok(!userPrompt.includes('with a very long descriptive accessible name that keeps going well past sixty characters'), 'overly long field text must be truncated');
+    assert.ok(userPrompt.includes('…'), 'expected a truncation marker');
+
+    // null-valued fields omitted entirely rather than spelled out.
+    assert.ok(!userPrompt.includes('"placeholder":null'), 'null fields should be omitted, not spelled out, to save bytes');
+    assert.ok(!userPrompt.includes('"label":null'));
+
+    // The model must be told elements were omitted, so it doesn't silently
+    // assume the list is complete.
+    assert.ok(/off-screen element\(s\) exist but are omitted/.test(userPrompt));
+
+    // The actual point of the fix: request body stays well below what
+    // caused the original 413, even for this synthetic 200-element
+    // worst case.
+    const bodyBytes = Buffer.byteLength(captured.options.body, 'utf8');
+    assert.ok(bodyBytes < 30000, `expected a bounded request body, got ${bodyBytes} bytes`);
+  });
+
+  await test('decideNextAction: a small snapshot is left effectively as-is (no unnecessary compaction/omission note)', async () => {
+    let captured = null;
+    await withMockedChatContent(
+      JSON.stringify({ action: 'click', ref: 'e1', value: null, reason: 'ok' }),
+      async () => { await groqProvider.decideNextAction(sampleSnapshot, sampleIntent, []); },
+      { captureRequest: (req) => { captured = req; } }
+    );
+    const userPrompt = JSON.parse(captured.options.body).messages[1].content;
+    assert.ok(userPrompt.includes('"inViewport":true'), 'small snapshots keep their real fields, unaffected by the size-driven compaction');
+    assert.ok(!/off-screen element\(s\) exist but are omitted/.test(userPrompt), 'no omission note when nothing was actually omitted');
+  });
+
+  await test('a 413 during parseIntent is clearly attributed to parseIntent, and diagnostics never include the API key', async () => {
+    const logCalls = [];
+    const warnCalls = [];
+    const originalLog = console.log;
+    const originalWarn = console.warn;
+    console.log = (...args) => { logCalls.push(args); };
+    console.warn = (...args) => { warnCalls.push(args); };
+
+    try {
+      await withMockedFetch(async () => new Response(JSON.stringify({ error: { message: 'request too large' } }), { status: 413 }), async () => {
+        await assert.rejects(() => groqProvider.parseIntent('Do X.'), (err) => {
+          assert.ok(err instanceof GroqProviderError);
+          assert.ok(/413/.test(err.message));
+          assert.ok(/parseIntent/.test(err.message), 'expected the error to name which call failed');
+          return true;
+        });
+      });
+    } finally {
+      console.log = originalLog;
+      console.warn = originalWarn;
+    }
+
+    const allLoggedText = JSON.stringify([...logCalls, ...warnCalls]);
+    assert.ok(!allLoggedText.includes('test-key-not-real'), 'the API key must never appear in any diagnostic log line');
+    assert.ok(allLoggedText.includes('413'));
+    assert.ok(allLoggedText.includes('openai/gpt-oss-20b'), 'expected the model name to be logged for diagnosis');
+  });
+
+  await test('a 413 during decideNextAction is clearly attributed to decideNextAction, not confused with parseIntent', async () => {
+    await withMockedFetch(async () => new Response('Request Entity Too Large', { status: 413 }), async () => {
+      await assert.rejects(() => groqProvider.decideNextAction(sampleSnapshot, sampleIntent, []), (err) => {
+        assert.ok(err instanceof GroqProviderError);
+        assert.ok(/413/.test(err.message));
+        assert.ok(/decideNextAction/.test(err.message));
+        return true;
+      });
+    });
   });
 
   const failed = results.filter((r) => !r.ok);
