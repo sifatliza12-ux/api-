@@ -127,13 +127,42 @@ const getSession = (req, res) => {
 // contract doesn't need to change when Phase 2 introduces them.
 const ALLOWED_FOLLOWUP_STATUSES = new Set(['awaiting_confirmation', 'failed']);
 
+// Builds the single nlCommand string passed to parseIntent (and, from
+// there, to whichever AIProvider is active — this is provider-agnostic by
+// construction, since every provider's parseIntent takes one plain string).
+// Bug fix: a flat `messages.join('\n')` gives the model no signal about
+// WHICH statement is authoritative when a follow-up conflicts with an
+// earlier one (e.g. "search flights on FlightRadar24" followed by "I said
+// create an API for water heater from Walton") — the model would see both
+// topics with equal weight and could anchor on the first, stale one. This
+// explicitly separates the original request from numbered follow-ups and
+// states the priority rule in the text itself, so the SAME single-string
+// parseIntent(nlCommand) contract every provider already implements gets
+// an unambiguous prompt — no provider file needs to know this endpoint
+// even supports follow-ups.
+const buildCombinedCommand = (chatMessages) => {
+  const userMessages = chatMessages
+    .filter((m) => m.role === 'user' && typeof m.text === 'string')
+    .map((m) => m.text);
+
+  if (userMessages.length <= 1) {
+    return userMessages[0] || '';
+  }
+
+  const [original, ...followUps] = userMessages;
+  const followUpLines = followUps.map((text, index) => `Follow-up ${index + 1}: "${text}"`).join('\n');
+
+  return `Original request: "${original}"\n${followUpLines}\n\nThe follow-up message(s) above may confirm, refine, or completely replace the original request. If a follow-up conflicts with the original request or an earlier follow-up (e.g. it names a different site, task, or product), the MOST RECENT follow-up is authoritative — do not blend it with, or fall back to, an earlier request it superseded.`;
+};
+
 // POST /api/ai-creator/sessions/:id/messages
 // Body: { message: string }
 // Minimal follow-up support (requirement 7): re-parses the ORIGINAL command
-// plus every follow-up message as one combined request, rather than a
-// separate revision-aware prompt — simple enough for Phase 1, and already
-// enough to support something like "actually use Chittagong as the origin"
-// on top of an earlier "search flights from Dhaka to Dubai" without any
+// plus every follow-up message as one combined, explicitly-labeled request
+// (see buildCombinedCommand) — enough to support both a minor refinement
+// ("actually use Chittagong as the origin") and a full correction that
+// replaces the earlier request outright ("I said create an API for water
+// heater from Walton", after an earlier flight request), without any
 // browser awareness. No workflow generation happens here.
 const addMessage = async (req, res) => {
   try {
@@ -155,10 +184,7 @@ const addMessage = async (req, res) => {
     }
 
     const withMessage = sessionStore.appendMessage(session.id, { role: 'user', text: trimmed, at: nowIso() });
-    const combinedCommand = withMessage.chatMessages
-      .filter((m) => m.role === 'user' && typeof m.text === 'string')
-      .map((m) => m.text)
-      .join('\n');
+    const combinedCommand = buildCombinedCommand(withMessage.chatMessages);
 
     const result = await runParseAndRecord(session.id, combinedCommand);
     if (!result.ok) {

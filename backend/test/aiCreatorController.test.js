@@ -199,6 +199,96 @@ const run = async () => {
     assert.strictEqual(msgRes.body.messages.length, 4, 'expected user+assistant from create, plus user+assistant from the follow-up');
   });
 
+  // Regression test for a reported bug: a follow-up that completely
+  // replaces the topic (not just refines a parameter) still returned the
+  // STALE original intent, because the prompt sent to the AI provider was
+  // an unlabeled flat concatenation of every message with no signal about
+  // which one was authoritative. Captures the actual text handed to the
+  // (mocked) provider to prove the fix, not just the mocked response.
+  await test('POST /sessions/:id/messages: a follow-up that completely changes the topic produces the NEW intent, never the stale one', async () => {
+    mockIntentResponse({
+      targetSite: { name: 'FlightRadar24', url: 'https://www.flightradar24.com', confidence: 0.9 },
+      task: 'Search for flights',
+      parameters: [{ name: 'destination', type: 'text', value: 'Dubai', label: 'Destination' }]
+    });
+    const createReq = { body: { command: 'Search for flights on FlightRadar24' }, user };
+    const createRes = makeRes();
+    await createSession(createReq, createRes);
+    createdSessionIds.push(createRes.body.sessionId);
+    assert.strictEqual(createRes.body.intent.targetSite.name, 'FlightRadar24');
+
+    let capturedPromptText = null;
+    anthropicClient.getClient = () => ({
+      messages: {
+        create: async (params) => {
+          capturedPromptText = params.messages[0].content;
+          return {
+            content: [{
+              type: 'tool_use',
+              name: 'propose_automation_intent',
+              input: {
+                targetSite: { name: 'Walton', url: null, confidence: 0.5 },
+                task: 'Search for water heaters',
+                parameters: [{ name: 'product', type: 'text', value: 'water heater', label: 'Product' }]
+              }
+            }]
+          };
+        }
+      }
+    });
+
+    const msgReq = { params: { id: createRes.body.sessionId }, body: { message: 'I said create an API for water heater from Walton' }, user };
+    const msgRes = makeRes();
+    await addMessage(msgReq, msgRes);
+
+    assert.strictEqual(msgRes.statusCode, 200);
+    assert.strictEqual(msgRes.body.intent.targetSite.name, 'Walton');
+    assert.strictEqual(msgRes.body.intent.task, 'Search for water heaters');
+    assert.notStrictEqual(msgRes.body.intent.targetSite.name, 'FlightRadar24', 'the stale original intent must never be presented as the current confirmation after a clear correction');
+
+    // Both messages must be preserved in the session's own history.
+    const userTexts = msgRes.body.messages.filter((m) => m.role === 'user').map((m) => m.text);
+    assert.deepStrictEqual(userTexts, ['Search for flights on FlightRadar24', 'I said create an API for water heater from Walton']);
+
+    // The stored session (not just the HTTP response) must also reflect it.
+    const stored = sessionStore.getById(createRes.body.sessionId);
+    assert.strictEqual(stored.status, 'awaiting_confirmation');
+
+    // The actual fix: the constructed prompt must label original vs.
+    // follow-up and state that a conflicting follow-up is authoritative —
+    // this is what was missing before (a bare newline-joined blob).
+    assert.ok(capturedPromptText.includes('Search for flights on FlightRadar24'));
+    assert.ok(capturedPromptText.includes('I said create an API for water heater from Walton'));
+    assert.ok(/follow-?up/i.test(capturedPromptText), 'expected the prompt to explicitly label the follow-up message');
+    assert.ok(/most recent|authoritative|supersede/i.test(capturedPromptText), 'expected explicit guidance that a later, conflicting message takes priority');
+  });
+
+  await test('POST /sessions/:id/messages: an ordinary follow-up that does NOT correct the intent still preserves the existing site/task context', async () => {
+    mockIntentResponse({
+      targetSite: { name: 'Example Hotels', url: 'https://www.example-hotels.com', confidence: 0.8 },
+      task: 'Search hotels',
+      parameters: [{ name: 'nights', type: 'number', value: '2', label: 'Nights' }]
+    });
+    const createReq = { body: { command: 'Search hotels in Paris for 2 nights on Example Hotels.' }, user };
+    const createRes = makeRes();
+    await createSession(createReq, createRes);
+    createdSessionIds.push(createRes.body.sessionId);
+
+    mockIntentResponse({
+      targetSite: { name: 'Example Hotels', url: 'https://www.example-hotels.com', confidence: 0.8 },
+      task: 'Search hotels',
+      parameters: [{ name: 'nights', type: 'number', value: '5', label: 'Nights' }]
+    });
+    const msgReq = { params: { id: createRes.body.sessionId }, body: { message: 'Make it 5 nights instead.' }, user };
+    const msgRes = makeRes();
+    await addMessage(msgReq, msgRes);
+
+    assert.strictEqual(msgRes.statusCode, 200);
+    assert.strictEqual(msgRes.body.intent.targetSite.name, 'Example Hotels', 'a non-conflicting refinement must preserve the existing site/task context');
+    assert.strictEqual(msgRes.body.intent.task, 'Search hotels');
+    assert.strictEqual(msgRes.body.intent.parameters[0].value, '5');
+  });
+
   await test('POST /sessions/:id/messages rejects a follow-up while the session is mid-generation (409)', async () => {
     mockIntentResponse({ targetSite: { name: 'Example', confidence: 0.5 }, task: 'Do X', parameters: [] });
     const createReq = { body: { command: 'Create an API to do X.' }, user };

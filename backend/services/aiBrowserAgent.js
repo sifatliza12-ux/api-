@@ -40,12 +40,44 @@ class BrowserAgentError extends Error {
   }
 }
 
+// A RECOVERABLE execution fault — the decided action was structurally valid
+// (a real ref from the current snapshot, a supported action type) but could
+// not actually be carried out against the live page (nothing currently
+// visible/enabled/stable/unobscured matches it, or the actual click/fill/
+// press call still failed despite that). The main loop treats ONLY this
+// subclass as recoverable — reported back into `history` so the next
+// decision can try something else — everything else (an invented ref, an
+// unsupported action type, a navigation failure) stays fatal, unchanged.
+class ActionExecutionError extends BrowserAgentError {
+  constructor(message, details) {
+    super(message, details);
+    this.name = 'ActionExecutionError';
+  }
+}
+
 // Small enough that a runaway/looping model can't drive a single request
 // forever, generous enough for a real multi-field form + submit + result
 // page. Overridable per call for tests, not via env — this bounds a single
 // live browser session's cost, not a deployment-wide setting.
 const DEFAULT_MAX_STEPS = 20;
 const ACTION_TIMEOUT_MS = 10000;
+// Once resolveElementLocator has already confirmed a candidate is visible,
+// enabled, stable, and unobscured, the actual click/fill/press should
+// resolve almost immediately — this stays far below ACTION_TIMEOUT_MS so a
+// genuine residual failure (e.g. a last-instant DOM change) is reported
+// back to the agent loop in seconds, not after a full 10s hang on an
+// action that was never going to succeed.
+const INTERACTION_TIMEOUT_MS = 3000;
+// How many live DOM matches of a single locator candidate to probe before
+// moving on to the next locator strategy — bounds cost when a selector
+// (e.g. a data-testid reused across a duplicated desktop/mobile layout)
+// matches many elements, only one of which is the real, currently visible
+// target.
+const MAX_CANDIDATE_MATCHES_TO_CHECK = 8;
+// Cheap two-sample bounding-box comparison — not Playwright's full internal
+// stability protocol, just enough to reject an element that's visibly
+// still animating/moving (e.g. a toast sliding in) at decision time.
+const STABILITY_CHECK_DELAY_MS = 60;
 
 // Same HEADLESS/launch-args logic as replayEngine.js's runWorkflow (not
 // exported from there — see that file's export-list comment on why the
@@ -58,12 +90,101 @@ const HEADLESS = process.env.FORGEFLOW_HEADLESS !== undefined
   : NODE_ENV === 'production';
 const CONTAINER_LAUNCH_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'];
 
-// Resolves a decideNextAction ref back to a live Playwright Locator by
-// walking the SAME element's locators array pageSnapshotBuilder built for
-// it (in priority order), same interop contract pageSnapshotBuilder.test.js
-// already proves against replayEngine.locatorFromCandidate. Throws rather
-// than guessing if every candidate fails to resolve to anything currently
-// on the page — the page may have changed between the snapshot and now.
+// Best-effort "is anything else painted on top of this element's center
+// point" check via elementFromPoint — the same generic technique used
+// elsewhere for overlay detection, applied here per-candidate rather than
+// page-wide. Never throws and never blocks resolution on its own failure
+// (a detached element, a point outside the layout viewport, etc. all just
+// count as "not obscured" — this is a refinement on top of the visible/
+// enabled checks, not a replacement for them).
+const isCandidateObscured = async (locator) => {
+  try {
+    return await locator.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const topEl = document.elementFromPoint(cx, cy);
+      if (!topEl) return false;
+      return !(topEl === el || el.contains(topEl) || topEl.contains(el));
+    });
+  } catch (error) {
+    return false;
+  }
+};
+
+// Cheap two-sample bounding-box comparison — rejects an element that's
+// still visibly moving (e.g. mid-animation) right now, without waiting for
+// Playwright's own full actionability protocol to do it implicitly inside
+// the eventual click/fill/press call.
+const isCandidateStable = async (locator) => {
+  try {
+    const box1 = await locator.boundingBox();
+    if (!box1) return false;
+    await new Promise((resolve) => setTimeout(resolve, STABILITY_CHECK_DELAY_MS));
+    const box2 = await locator.boundingBox();
+    if (!box2) return false;
+    return box1.x === box2.x && box1.y === box2.y && box1.width === box2.width && box1.height === box2.height;
+  } catch (error) {
+    return false;
+  }
+};
+
+// A single locator candidate (e.g. `[data-testid="auth-toggle"]`) can
+// resolve to MULTIPLE live DOM elements — a data-testid/class/structural
+// selector describes a class of elements, not the one specific node
+// pageSnapshotBuilder actually inspected. This is common and completely
+// generic (not site-specific): a duplicated desktop/mobile nav, an A/B
+// variant, a hidden template clone, etc. all legitimately share attributes
+// with the real, currently-visible target. `.first()` alone picks whatever
+// happens to be first in DOM order, which is NOT guaranteed to be the
+// visible one — that mismatch is what caused the reported
+// "locator.click: Timeout 10000ms exceeded" / "element is not visible"
+// failure. This walks every live match (bounded by
+// MAX_CANDIDATE_MATCHES_TO_CHECK) and returns the first one that is
+// actually visible, enabled, stable, and unobscured — never just the first
+// DOM-order match.
+const findInteractableMatch = async (page, candidate) => {
+  const base = locatorFromCandidate(page, candidate);
+  let count;
+  try {
+    count = await base.count();
+  } catch (error) {
+    return null;
+  }
+
+  const checkCount = Math.min(count, MAX_CANDIDATE_MATCHES_TO_CHECK);
+  for (let i = 0; i < checkCount; i += 1) {
+    const nth = base.nth(i);
+    try {
+      const [visible, enabled] = await Promise.all([nth.isVisible(), nth.isEnabled()]);
+      if (!visible || !enabled) continue;
+      if (!(await isCandidateStable(nth))) continue;
+      if (await isCandidateObscured(nth)) continue;
+      return nth;
+    } catch (error) {
+      // This specific match errored out (e.g. detached mid-check) — try
+      // the next one rather than giving up on the whole candidate.
+    }
+  }
+  return null;
+};
+
+// Resolves a decideNextAction ref back to a live, INTERACTABLE Playwright
+// Locator by walking the SAME element's locators array pageSnapshotBuilder
+// built for it (in priority order), same interop contract
+// pageSnapshotBuilder.test.js already proves against
+// replayEngine.locatorFromCandidate — but, unlike a bare "does anything
+// match" check, each candidate is scanned for an actually visible/enabled/
+// stable/unobscured live match (see findInteractableMatch) before being
+// accepted. If a candidate's matches are all hidden/disabled/obscured, the
+// NEXT locator strategy for the same element is tried, rather than handing
+// back a known-bad element and letting Playwright's own action timeout
+// discover that the slow way.
+//
+// Throws plain BrowserAgentError (fatal — the ref itself is invalid, not
+// just currently unreachable) when the ref isn't in the snapshot at all;
+// throws ActionExecutionError (recoverable — see the main loop) when the
+// ref is real but nothing about it is currently interactable.
 const resolveElementLocator = async (page, snapshot, ref) => {
   const element = (snapshot.elements || []).find((el) => el.ref === ref);
   if (!element) {
@@ -71,16 +192,12 @@ const resolveElementLocator = async (page, snapshot, ref) => {
   }
 
   for (const candidate of element.locators || []) {
-    try {
-      const locator = locatorFromCandidate(page, candidate).first();
-      if (await locator.count() > 0) {
-        return locator;
-      }
-    } catch (error) {
-      // This candidate didn't resolve — fall through to the next one.
+    const match = await findInteractableMatch(page, candidate);
+    if (match) {
+      return match;
     }
   }
-  throw new BrowserAgentError(`Could not resolve any locator for ref "${ref}" against the live page.`, { element });
+  throw new ActionExecutionError(`Ref "${ref}" resolved to a snapshot element, but no candidate locator currently matches a visible, enabled, stable, unobscured element on the live page.`, { element });
 };
 
 // Executes exactly one validated action (from ollamaResponseUtils
@@ -95,18 +212,35 @@ const executeAction = async (page, snapshot, action) => {
     case 'click':
     case 'calendar_date': {
       const locator = await resolveElementLocator(page, snapshot, action.ref);
-      await locator.click({ timeout: ACTION_TIMEOUT_MS });
+      try {
+        await locator.click({ timeout: INTERACTION_TIMEOUT_MS });
+      } catch (error) {
+        // Already pre-verified visible/enabled/stable/unobscured — this is
+        // a genuine residual failure (e.g. a last-instant DOM change), not
+        // the "blindly retry a known-hidden element" failure mode this fix
+        // targets. Still reported back to the agent loop rather than
+        // crashing the whole run.
+        throw new ActionExecutionError(`Could not click the target element for ref "${action.ref}": ${error.message}`, { ref: action.ref });
+      }
       break;
     }
     case 'input':
     case 'change': {
       const locator = await resolveElementLocator(page, snapshot, action.ref);
-      await locator.fill(action.value || '', { timeout: ACTION_TIMEOUT_MS });
+      try {
+        await locator.fill(action.value || '', { timeout: INTERACTION_TIMEOUT_MS });
+      } catch (error) {
+        throw new ActionExecutionError(`Could not fill the target element for ref "${action.ref}": ${error.message}`, { ref: action.ref });
+      }
       break;
     }
     case 'keydown': {
       const locator = await resolveElementLocator(page, snapshot, action.ref);
-      await locator.press(action.value || 'Enter', { timeout: ACTION_TIMEOUT_MS });
+      try {
+        await locator.press(action.value || 'Enter', { timeout: INTERACTION_TIMEOUT_MS });
+      } catch (error) {
+        throw new ActionExecutionError(`Could not send the key to the target element for ref "${action.ref}": ${error.message}`, { ref: action.ref });
+      }
       break;
     }
     default:
@@ -201,10 +335,13 @@ const actionToRecordedEvent = (action, snapshot) => {
 
 // Runs the agent loop to completion (done/stop/blocked/maxSteps) and
 // returns a result — never throws for an ordinary in-page failure (a
-// blocked page, the model stopping, running out of steps); only throws
-// BrowserAgentError for a genuine execution fault (bad ref, navigation
-// error, unresolvable locator) since those mean the run can't be trusted to
-// continue safely.
+// blocked page, the model stopping, running out of steps), NOR for a
+// single action that turned out not to be currently interactable (see
+// ActionExecutionError above — that's reported back into history and the
+// loop continues). Only throws for a structural fault that means the run
+// can't be trusted to continue safely at all: an invalid/invented ref, an
+// unsupported action type, a navigation failure, or the model call itself
+// failing.
 //
 // `page`, when provided, is used as-is and its browser/context lifecycle is
 // the CALLER's responsibility (matches buildPageSnapshot's own convention,
@@ -275,8 +412,26 @@ const runBrowserAgent = async ({ intent, maxSteps = DEFAULT_MAX_STEPS, page: inj
         return finalInfo({ success: false, stopped: true, stopReason: 'model_stop', message: action.reason || 'The AI agent stopped before completing the task.' });
       }
 
-      await executeAction(page, snapshot, action);
-      steps.push(actionToRecordedEvent(action, snapshot));
+      try {
+        await executeAction(page, snapshot, action);
+        steps.push(actionToRecordedEvent(action, snapshot));
+      } catch (error) {
+        if (error instanceof ActionExecutionError) {
+          // Recoverable: the decided action was valid (a real ref, a
+          // supported type) but couldn't actually be carried out right now
+          // — reported back into history (annotating the same entry
+          // history.push(action) already added above) so the NEXT
+          // decideNextAction call sees exactly what failed and why, and can
+          // choose a different element/action instead. Nothing is recorded
+          // to `steps` since nothing actually happened on the page. Anything
+          // else (an invalid ref, an unsupported action type, a navigation
+          // failure) is a structural fault, not a "this element wasn't
+          // interactable" fault, and still propagates fatally, unchanged.
+          history[history.length - 1] = { ...action, outcome: 'failed', error: error.message };
+          continue;
+        }
+        throw error;
+      }
     }
 
     return finalInfo({ success: false, stopped: true, stopReason: 'max_steps_exceeded', message: `Stopped after ${maxSteps} steps without the task being marked done.` });
@@ -287,4 +442,4 @@ const runBrowserAgent = async ({ intent, maxSteps = DEFAULT_MAX_STEPS, page: inj
   }
 };
 
-module.exports = { runBrowserAgent, BrowserAgentError, DEFAULT_MAX_STEPS };
+module.exports = { runBrowserAgent, BrowserAgentError, ActionExecutionError, DEFAULT_MAX_STEPS };

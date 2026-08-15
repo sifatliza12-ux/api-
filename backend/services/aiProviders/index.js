@@ -9,12 +9,16 @@
 //
 // Selection is controlled entirely by AI_PROVIDER:
 //   "local" (default) | "rule-based" -> ruleBasedProvider (zero cost, zero
-//     external dependency — this is what guarantees Anthropic is never
-//     required just to use the AI Creator)
-//   "ollama"                          -> ollamaProvider
+//     external dependency — this is what guarantees Anthropic/Groq are
+//     never required just to use the AI Creator)
+//   "ollama"                          -> ollamaProvider (local, free, slow
+//     on CPU-only hardware)
 //   "anthropic"                       -> anthropicProvider
-// There is deliberately no "auto-upgrade to Anthropic because a key is
-// present" branch — using Anthropic is always an explicit choice.
+//   "groq"                            -> groqProvider (cloud, fast — see
+//     GROQ_API_KEY/GROQ_MODEL in .env.example; an alternative to Ollama for
+//     machines where local inference isn't practical)
+// There is deliberately no "auto-upgrade because a key is present" branch
+// for either cloud provider — using one is always an explicit choice.
 const resolveConfiguredProvider = () => (process.env.AI_PROVIDER || 'local').trim().toLowerCase();
 
 const getProvider = () => {
@@ -23,6 +27,9 @@ const getProvider = () => {
   if (configured === 'anthropic') {
     return require('./anthropicProvider');
   }
+  if (configured === 'groq') {
+    return require('./groqProvider');
+  }
   if (configured === 'ollama') {
     return require('./ollamaProvider');
   }
@@ -30,7 +37,7 @@ const getProvider = () => {
     return require('./ruleBasedProvider');
   }
 
-  throw new Error(`Unknown AI_PROVIDER "${configured}". Expected one of: local, rule-based, ollama, anthropic.`);
+  throw new Error(`Unknown AI_PROVIDER "${configured}". Expected one of: local, rule-based, ollama, anthropic, groq.`);
 };
 
 module.exports = { getProvider, resolveConfiguredProvider };

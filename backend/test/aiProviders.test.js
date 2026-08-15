@@ -55,6 +55,18 @@ const run = async () => {
     assert.strictEqual(getProvider().name, 'anthropic');
   });
 
+  await test('AI_PROVIDER=groq resolves to the groq provider without requiring an API key at require time', () => {
+    process.env.AI_PROVIDER = 'groq';
+    const { getProvider } = require('../services/aiProviders');
+    assert.strictEqual(getProvider().name, 'groq');
+  });
+
+  await test('AI_PROVIDER=GROQ (case-insensitive) also resolves to the groq provider', () => {
+    process.env.AI_PROVIDER = 'GROQ';
+    const { getProvider } = require('../services/aiProviders');
+    assert.strictEqual(getProvider().name, 'groq');
+  });
+
   await test('AI_PROVIDER=ANTHROPIC (case-insensitive) also resolves to the anthropic provider', () => {
     process.env.AI_PROVIDER = 'ANTHROPIC';
     const { getProvider } = require('../services/aiProviders');
